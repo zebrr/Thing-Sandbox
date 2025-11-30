@@ -123,7 +123,7 @@ prompt_path = config.resolve_prompt("phase1_intention", sim_path)
 
 Чтение/запись симуляций, валидация по JSON-схемам, Pydantic-модели данных.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Входные требования:**
 - A.1 готов
