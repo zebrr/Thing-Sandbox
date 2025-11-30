@@ -1,6 +1,6 @@
 # util_storage.md
 
-## Status: NOT_STARTED
+## Status: READY
 
 Storage module for Thing' Sandbox. Loads and saves simulation state — simulation metadata, 
 characters, and locations. Validates data using Pydantic models. Provides atomic save 
