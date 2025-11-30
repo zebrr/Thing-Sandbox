@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thing-sandbox/schemas/Location.schema.json",
+  "title": "Location",
+  "description": "A place in the world where characters and events exist",
+  "type": "object",
+  "properties": {
+    "identity": {
+      "type": "object",
+      "description": "Static part — what this place is",
+      "required": ["id", "name", "description", "connections"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Unique identifier, lowercase with underscores"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name (Location A, Sector 7, etc.)"
+        },
+        "description": {
+          "type": "string",
+          "description": "What is here — accumulates significant changes over time"
+        },
+        "connections": {
+          "type": "array",
+          "description": "Where you can go from here",
+          "items": {
+            "type": "object",
+            "required": ["location_id", "description"],
+            "properties": {
+              "location_id": {
+                "type": "string",
+                "description": "Target location id"
+              },
+              "description": {
+                "type": "string",
+                "description": "How to get there — direction, route, passage type"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "state": {
+      "type": "object",
+      "description": "Dynamic part — current situation",
+      "required": ["moment"],
+      "properties": {
+        "moment": {
+          "type": "string",
+          "description": "What is happening right now — temporary conditions, ambient state"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "required": ["identity", "state"],
+  "additionalProperties": true
+}

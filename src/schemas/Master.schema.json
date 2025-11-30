@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thing-sandbox/schemas/Master.schema.json",
+  "title": "MasterOutput",
+  "description": "Game master (arbiter) output — result of resolving a scene in one location",
+  "type": "object",
+  "properties": {
+    "tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Current simulation tick number"
+    },
+    "location_id": {
+      "type": "string",
+      "description": "Location where this scene took place"
+    },
+    "characters": {
+      "type": "object",
+      "description": "Updated state for each character present in the scene",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["location", "internal_state", "external_intent", "memory_entry"],
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "Character's location after this tick (may have moved)"
+          },
+          "internal_state": {
+            "type": "string",
+            "description": "New inner state — feelings, condition"
+          },
+          "external_intent": {
+            "type": "string",
+            "description": "New goals and focus"
+          },
+          "memory_entry": {
+            "type": "string",
+            "description": "Subjective memory record from character's perspective"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "location": {
+      "type": "object",
+      "description": "Updated state of the location",
+      "properties": {
+        "moment": {
+          "type": ["string", "null"],
+          "description": "Current temporary state — time, weather, ongoing events. Null if unchanged."
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "Updated description — only if something significantly changed the place. Null if unchanged."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["tick", "location_id", "characters", "location"],
+  "additionalProperties": false
+}

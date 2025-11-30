@@ -1,0 +1,5 @@
+[llm]
+# LLM client parameters will be added later
+
+[simulation]
+memory_cells = 5

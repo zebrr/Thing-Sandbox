@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thing-sandbox/schemas/NarrativeResponse.schema.json",
+  "title": "NarrativeResponse",
+  "description": "Narrative output from Phase 2b — story of what happened in the scene",
+  "type": "object",
+  "properties": {
+    "narrative": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Description of the scene events for the observer log"
+    }
+  },
+  "required": ["narrative"],
+  "additionalProperties": false
+}

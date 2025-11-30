@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thing-sandbox/schemas/SummaryResponse.schema.json",
+  "title": "SummaryResponse",
+  "description": "Summary output from Phase 4 — compressed memory of past events",
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Compressed history combining old summary with the dropped memory cell"
+    }
+  },
+  "required": ["summary"],
+  "additionalProperties": false
+}

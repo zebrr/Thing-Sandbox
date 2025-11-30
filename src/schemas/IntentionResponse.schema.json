@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thing-sandbox/schemas/IntentionResponse.schema.json",
+  "title": "IntentionResponse",
+  "description": "Character's intention output from Phase 1 — what the character wants to do this tick",
+  "type": "object",
+  "properties": {
+    "intention": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Free-form description of what the character intends to do"
+    }
+  },
+  "required": ["intention"],
+  "additionalProperties": false
+}

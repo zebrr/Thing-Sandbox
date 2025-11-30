@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thing-sandbox/schemas/Character.schema.json",
+  "title": "Character",
+  "description": "Autonomous entity controlled by LLM — has identity, state, and memory",
+  "type": "object",
+  "properties": {
+    "identity": {
+      "type": "object",
+      "description": "Static part — who the character is (never changes during simulation)",
+      "required": ["id", "name", "description"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Unique identifier, lowercase with underscores"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name (Bob, Elvira, etc.)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Character, values, behavior patterns — goes into system prompt"
+        },
+        "triggers": {
+          "type": "string",
+          "description": "Reaction patterns — what character reacts to automatically"
+        }
+      },
+      "additionalProperties": true
+    },
+    "state": {
+      "type": "object",
+      "description": "Dynamic part — current situation (changes every tick)",
+      "required": ["location"],
+      "properties": {
+        "location": {
+          "type": "string",
+          "description": "Current location id"
+        },
+        "internal_state": {
+          "type": "string",
+          "description": "Inner feelings: tired, hungry, anxious, happy, etc."
+        },
+        "external_intent": {
+          "type": "string",
+          "description": "Goals and focus: what character wants to do or achieve"
+        }
+      },
+      "additionalProperties": true
+    },
+    "memory": {
+      "type": "object",
+      "description": "Subjective memories — FIFO queue of K cells plus summary",
+      "required": ["cells", "summary"],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["tick", "text"],
+            "properties": {
+              "tick": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Tick number when this memory was formed"
+              },
+              "text": {
+                "type": "string",
+                "description": "Subjective memory content from character's perspective"
+              }
+            },
+            "additionalProperties": true
+          },
+          "description": "Recent memories, index 0 = most recent tick"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Compressed history of everything before the oldest cell"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "required": ["identity", "state", "memory"],
+  "additionalProperties": true
+}
