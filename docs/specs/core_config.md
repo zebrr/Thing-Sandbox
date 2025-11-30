@@ -1,6 +1,6 @@
 # core_config.md
 
-## Status: NOT_STARTED
+## Status: READY
 
 Configuration loader for Thing' Sandbox. Loads application settings from `config.toml` 
 and secrets from `.env`, provides prompt resolution with simulation-specific overrides.
