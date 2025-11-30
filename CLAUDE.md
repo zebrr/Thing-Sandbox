@@ -1,4 +1,4 @@
-# CLAUDE.md - Claude Code Instructions - Project Thing' Sandbox v1.2
+# CLAUDE.md - Claude Code Instructions - Project Thing' Sandbox v1.3
 
 Workspace: `/Users/askold.romanov/code/thing'-sandbox`
 
@@ -11,11 +11,12 @@ The project serves dual purposes: a sandbox for exploring LLM agent behavior and
 ## Critical Rules
 
 1. **NEVER commit without user approval** — ask before committing, user controls git
-2. **NEVER create** directories not specified in architecture
-3. **NEVER run** simulation ticks without user permission
-4. **ALWAYS backup** files before modification: `<filename>_backup_<TASK-ID>.*`
-5. **ALWAYS activate** venv before Python commands: `source .venv/bin/activate` or similar
-6. **ALWAYS do** quality checks → tests → spec updates → report (in this order)
+2. **NEVER change commit message after user approval** - do not add footer and your signature
+3. **NEVER create** directories not specified in architecture
+4. **NEVER run** simulation ticks without user permission
+5. **ALWAYS backup** files before modification: `<filename>_backup_<TASK-ID>.*`
+6. **ALWAYS activate** venv before Python commands: `source .venv/bin/activate` or similar
+7. **ALWAYS do** quality checks → tests → spec updates → report (in this order)
 
 ## Environment Detection
 
