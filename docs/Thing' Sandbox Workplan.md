@@ -209,7 +209,7 @@ print(config.phase2a.response_chain_depth)  # 2
 
 Общие типы/исключения и адаптер для OpenAI Responses API: выполнение запросов, retry, timeout, rate limit handling.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (разделы 2, 4, 9)

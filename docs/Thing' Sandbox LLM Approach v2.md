@@ -54,7 +54,7 @@
 │  src/utils/llm_adapters/openai.py                           │
 │                                                             │
 │  Знает: OpenAI API, AsyncOpenAI, Structured Outputs         │
-│  - execute(request) → response_id, parsed, usage, headers   │
+│  - execute(request) → AdapterResponse[T]                    │
 │  - delete_response(response_id)                             │
 │  Внутри: retry logic, timeout handling                      │
 └─────────────────────────────────────────────────────────────┘
@@ -153,10 +153,22 @@ class LLMRequest:
 
 ## 4. OpenAIAdapter — транспортный слой
 
+**Ключевое решение:** используем `responses.parse()` вместо `responses.create()`. Это SDK helper который:
+- Принимает Pydantic класс напрямую (не нужно конвертировать в JSON Schema)
+- Возвращает уже распарсенный объект в `response.output_parsed`
+- Упрощает код, убирает ручной JSON parse
+
 ```python
 import os
+import asyncio
+import logging
+from typing import TypeVar
+
 import httpx
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError, APITimeoutError
+from pydantic import BaseModel
+
+T = TypeVar("T", bound=BaseModel)
 
 class OpenAIAdapter:
     """
@@ -165,29 +177,28 @@ class OpenAIAdapter:
     """
     
     def __init__(self, config: PhaseConfig):
-        # Timeout передаётся в httpx клиент
-        timeout = httpx.Timeout(config.timeout, connect=10.0)
-        self.client = AsyncOpenAI(
-            api_key=os.environ["OPENAI_API_KEY"],
-            timeout=timeout
-        )
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise LLMError("OPENAI_API_KEY environment variable not set")
+        
+        timeout = httpx.Timeout(float(config.timeout), connect=10.0)
+        self.client = AsyncOpenAI(api_key=api_key, timeout=timeout)
         self.config = config
     
     async def execute(
         self,
         instructions: str,
         input_data: str,
-        schema: dict,  # JSON Schema
+        schema: type[T],  # Pydantic класс, не dict!
         previous_response_id: str | None = None
-    ) -> AdapterResponse:
+    ) -> AdapterResponse[T]:
         """
         Выполнить запрос к OpenAI с retry.
         
-        Retry выполняется молча для rate limit и transient errors.
-        Timeout обрабатывается на уровне httpx.
+        Retry выполняется молча для rate limit и timeout.
         
         Returns:
-            AdapterResponse с response_id, parsed data, usage, headers
+            AdapterResponse[T] с response_id, parsed (Pydantic модель), usage
             
         Raises:
             LLMRateLimitError: Rate limit после всех retry
@@ -202,52 +213,99 @@ class OpenAIAdapter:
                     instructions, input_data, schema, previous_response_id
                 )
                 return self._process_response(response)
-                
-            except httpx.TimeoutException as e:
-                if attempt >= self.config.max_retries:
-                    raise LLMTimeoutError(f"Timeout after {attempt + 1} attempts: {e}")
-                logger.warning(f"Timeout attempt {attempt + 1}, retrying...")
-                await asyncio.sleep(1.0)
-                
+            
+            # Rate limit: ждём по header, retry
             except RateLimitError as e:
                 if attempt >= self.config.max_retries:
                     raise LLMRateLimitError(f"Rate limit after {attempt + 1} attempts")
-                wait_seconds = self._parse_reset_time(e.headers)
-                logger.warning(f"Rate limit hit, waiting {wait_seconds}s...")
-                await asyncio.sleep(wait_seconds + 0.5)
+                wait = self._parse_reset_ms(e.response.headers)
+                logger.warning(f"Rate limit hit, waiting {wait}s (attempt {attempt + 1})")
+                await asyncio.sleep(wait)
+            
+            # Timeout: обрабатываем и httpx, и SDK exception
+            except (httpx.TimeoutException, APITimeoutError) as e:
+                if attempt >= self.config.max_retries:
+                    raise LLMTimeoutError(f"Timeout after {attempt + 1} attempts")
+                logger.warning(f"Timeout, retrying (attempt {attempt + 1})")
+                await asyncio.sleep(1.0)
+            
+            # Refusal/Incomplete: не retry, сразу пробрасываем
+            except (LLMRefusalError, LLMIncompleteError):
+                raise
     
     async def _do_request(self, instructions, input_data, schema, previous_response_id):
         """Выполнить один запрос к OpenAI."""
-        return await self.client.responses.create(
-            model=self.config.model,
-            instructions=instructions,
-            input=input_data,
-            previous_response_id=previous_response_id,
-            text={"format": {"type": "json_schema", "json_schema": schema}},
-            max_output_tokens=self.config.max_completion,
-            store=True,
-            # + reasoning, verbosity, truncation из self.config если не None
-        )
+        params = {
+            "model": self.config.model,
+            "instructions": instructions,
+            "input": input_data,
+            "text_format": schema,  # Pydantic класс напрямую!
+            "max_output_tokens": self.config.max_completion,
+            "store": True,
+        }
+        
+        if previous_response_id:
+            params["previous_response_id"] = previous_response_id
+        
+        # Reasoning параметры только если is_reasoning=True
+        if self.config.is_reasoning:
+            reasoning = {}
+            if self.config.reasoning_effort:
+                reasoning["effort"] = self.config.reasoning_effort
+            if self.config.reasoning_summary:
+                reasoning["summary"] = self.config.reasoning_summary
+            if reasoning:
+                params["reasoning"] = reasoning
+        
+        # Optional параметры только если заданы
+        if self.config.truncation:
+            params["truncation"] = self.config.truncation
+        if self.config.verbosity:
+            params["verbosity"] = self.config.verbosity
+        
+        return await self.client.responses.parse(**params)
     
-    def _process_response(self, response) -> AdapterResponse:
+    def _process_response(self, response) -> AdapterResponse[T]:
         """Обработать ответ OpenAI, выбросить ошибки если нужно."""
+        # Проверка статуса
         if response.status == "incomplete":
             reason = response.incomplete_details.reason
-            raise LLMIncompleteError(f"Response incomplete: {reason}")
+            raise LLMIncompleteError(reason)
         
         if response.status == "failed":
-            raise LLMError(f"Response failed: {response.error.message}")
+            raise LLMError(f"Request failed: {response.error.message}")
         
+        # Проверка refusal через content type
         content = response.output[0].content[0]
         if content.type == "refusal":
             raise LLMRefusalError(content.refusal)
         
+        # Извлечение usage
+        usage = ResponseUsage(
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            reasoning_tokens=response.usage.output_tokens_details.reasoning_tokens or 0,
+        )
+        
+        # SDK уже распарсил в Pydantic модель!
         return AdapterResponse(
             response_id=response.id,
-            parsed=json.loads(content.text),
-            usage=ResponseUsage.from_response(response),
-            headers={}  # headers доступны через with_raw_response если нужно
+            parsed=response.output_parsed,  # уже T, не dict
+            usage=usage,
         )
+    
+    def _parse_reset_ms(self, headers: httpx.Headers) -> float:
+        """Парсинг времени ожидания из rate limit headers."""
+        reset_str = headers.get("x-ratelimit-reset-tokens", "1000ms")
+        try:
+            if reset_str.endswith("ms"):
+                return int(reset_str.rstrip("ms")) / 1000 + 0.5
+            elif reset_str.endswith("s"):
+                return float(reset_str.rstrip("s")) + 0.5
+            else:
+                return int(reset_str) / 1000 + 0.5
+        except (ValueError, TypeError):
+            return 1.5  # fallback
     
     async def delete_response(self, response_id: str) -> bool:
         """
@@ -265,27 +323,19 @@ class OpenAIAdapter:
 
 
 @dataclass
-class AdapterResponse:
+class AdapterResponse(Generic[T]):
+    """Generic контейнер для ответа адаптера."""
     response_id: str
-    parsed: dict  # raw JSON
+    parsed: T  # уже Pydantic модель, не dict!
     usage: ResponseUsage
-    headers: dict
 
 
 @dataclass
 class ResponseUsage:
+    """Token usage статистика."""
     input_tokens: int
     output_tokens: int
     reasoning_tokens: int = 0
-    
-    @classmethod
-    def from_response(cls, response) -> "ResponseUsage":
-        usage = response.usage
-        return cls(
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
-            reasoning_tokens=usage.output_tokens_details.reasoning_tokens or 0
-        )
 ```
 
 ---
@@ -715,9 +765,10 @@ src/utils/
 ├── llm.py                    # LLMClient, LLMRequest, ChainManager
 ├── llm_errors.py             # LLMError hierarchy
 ├── llm_adapters/
-│   ├── __init__.py
-│   ├── base.py               # BaseAdapter (абстракция)
-│   └── openai.py             # OpenAIAdapter, AdapterResponse, ResponseUsage
+│   ├── __init__.py           # Экспорт публичного API
+│   ├── base.py               # AdapterResponse, ResponseUsage (типы данных)
+│   │                         # TODO: BaseAdapter (абстракция) — когда появятся другие адаптеры
+│   └── openai.py             # OpenAIAdapter
 ```
 
 ---
