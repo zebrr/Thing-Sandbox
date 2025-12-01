@@ -1,6 +1,6 @@
 # util_llm_adapter_openai.md
 
-## Status: IN_PROGRESS
+## Status: READY
 
 OpenAI Responses API adapter. Executes requests with retry logic, timeout handling, 
 and structured output parsing via Pydantic models.
