@@ -1,0 +1,730 @@
+# Thing' Sandbox: LLM Approach v2
+
+Концептуальный документ по работе с LLM в проекте. Описывает архитектуру, async execution, управление chains и TPM.
+
+**Заменяет:** `Thing' Sandbox LLM Approach.md` (сохраняем как референс)
+
+---
+
+## 1. Обзор и отличия от v1
+
+| Аспект | v1 | v2 |
+|--------|----|----|
+| Execution model | Sync + background=True + polling | Async + background=False |
+| Client state | Stateful (как k2-18) | Stateless фасад + ChainManager внутри |
+| Interface | response_id возвращается наружу | Только Pydantic модель наружу |
+| Confirmation | Two-phase (explicit confirm) | Auto-confirm |
+| TPM estimation | Probe hack (background не возвращает headers) | Headers из sync response (MVP) или pre-flight `/v1/responses/input_tokens` |
+| Chain storage | В памяти | В сущностях с namespace `_openai` |
+
+**Почему async:**
+- `background=False` возвращает rate limit headers — не нужен probe hack
+- `asyncio.gather()` — готовый batch execution из коробки
+- Меньше API вызовов (нет polling overhead)
+- Код компактнее, логика яснее
+
+---
+
+## 2. Архитектура: слои и ответственности
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Phases                              │
+│  phase1.py, phase2a.py, phase2b.py, phase4.py               │
+│                                                             │
+│  Знают: промпты, схемы ответов, бизнес-логику, fallback     │
+│  НЕ знают: OpenAI, response_id, chains, TPM, retry          │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      LLMClient                              │
+│  src/utils/llm.py                                           │
+│                                                             │
+│  Публичный интерфейс:                                       │
+│  - create_response(instructions, input, schema, entity_key) │
+│  - create_batch(requests) → list[Result]                    │
+│                                                             │
+│  Внутри: ChainManager, usage accumulation, выбор адаптера   │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    OpenAIAdapter                            │
+│  src/utils/llm_adapters/openai.py                           │
+│                                                             │
+│  Знает: OpenAI API, AsyncOpenAI, Structured Outputs         │
+│  - execute(request) → response_id, parsed, usage, headers   │
+│  - delete_response(response_id)                             │
+│  Внутри: retry logic, timeout handling                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Строгое правило:** Runner и фазы не импортируют ничего из `openai`. Только `LLMClient`, `LLMError`, Pydantic схемы.
+
+**Разделение ответственности:**
+- **Транспорт (Adapter):** retry, timeout, rate limit handling — молча
+- **Клиент (LLMClient):** chains, usage accumulation, batch orchestration
+- **Фазы:** fallback при ошибках (graceful degradation)
+
+---
+
+## 3. LLMClient — публичный интерфейс
+
+```python
+from pydantic import BaseModel
+from typing import TypeVar
+
+T = TypeVar("T", bound=BaseModel)
+
+class LLMClient:
+    """
+    Провайдер-агностичный фасад для LLM запросов.
+    Фазы работают только с этим интерфейсом.
+    """
+    
+    async def create_response(
+        self,
+        instructions: str,
+        input_data: str,
+        schema: type[T],
+        entity_key: str | None = None
+    ) -> T:
+        """
+        Единичный запрос к LLM.
+        
+        Args:
+            instructions: Системный промпт
+            input_data: Пользовательские данные (контекст персонажа/локации)
+            schema: Pydantic модель для Structured Output
+            entity_key: Ключ для response chain ("intention:bob", "memory:elvira")
+                       None = независимый запрос без chain
+        
+        Returns:
+            Экземпляр schema с распарсенным ответом
+        
+        Raises:
+            LLMRefusalError: Модель отказала по safety
+            LLMIncompleteError: Ответ обрезан (max_tokens)
+            LLMRateLimitError: Rate limit после всех retry
+            LLMTimeoutError: Timeout после всех retry
+            LLMError: Прочие ошибки
+        """
+        ...
+    
+    async def create_batch(
+        self,
+        requests: list[LLMRequest]
+    ) -> list[T | LLMError]:
+        """
+        Batch запросов параллельно.
+        
+        Args:
+            requests: Список запросов с instructions, input_data, schema, entity_key
+        
+        Returns:
+            Список результатов в том же порядке.
+            Успешные — экземпляры schema.
+            Неуспешные — LLMError (не выбрасывается, возвращается в списке).
+            
+        Note:
+            Retry выполняется внутри для каждого запроса молча.
+            LLMError в результате означает, что все попытки исчерпаны.
+        """
+        ...
+
+
+@dataclass
+class LLMRequest:
+    """Запрос для batch execution."""
+    instructions: str
+    input_data: str
+    schema: type[BaseModel]
+    entity_key: str | None = None
+```
+
+**Что НЕ протекает наружу:**
+- `response_id`, `previous_response_id`
+- `background`, `polling`
+- TPM, headers, retry logic
+- Любые OpenAI-специфичные типы
+
+---
+
+## 4. OpenAIAdapter — транспортный слой
+
+```python
+import os
+import httpx
+from openai import AsyncOpenAI
+
+class OpenAIAdapter:
+    """
+    Адаптер для OpenAI Responses API.
+    Знает всё про OpenAI, не виден снаружи LLMClient.
+    """
+    
+    def __init__(self, config: PhaseConfig):
+        # Timeout передаётся в httpx клиент
+        timeout = httpx.Timeout(config.timeout, connect=10.0)
+        self.client = AsyncOpenAI(
+            api_key=os.environ["OPENAI_API_KEY"],
+            timeout=timeout
+        )
+        self.config = config
+    
+    async def execute(
+        self,
+        instructions: str,
+        input_data: str,
+        schema: dict,  # JSON Schema
+        previous_response_id: str | None = None
+    ) -> AdapterResponse:
+        """
+        Выполнить запрос к OpenAI с retry.
+        
+        Retry выполняется молча для rate limit и transient errors.
+        Timeout обрабатывается на уровне httpx.
+        
+        Returns:
+            AdapterResponse с response_id, parsed data, usage, headers
+            
+        Raises:
+            LLMRateLimitError: Rate limit после всех retry
+            LLMTimeoutError: Timeout после всех retry
+            LLMIncompleteError: Ответ обрезан
+            LLMRefusalError: Модель отказала
+            LLMError: Прочие ошибки
+        """
+        for attempt in range(self.config.max_retries + 1):
+            try:
+                response = await self._do_request(
+                    instructions, input_data, schema, previous_response_id
+                )
+                return self._process_response(response)
+                
+            except httpx.TimeoutException as e:
+                if attempt >= self.config.max_retries:
+                    raise LLMTimeoutError(f"Timeout after {attempt + 1} attempts: {e}")
+                logger.warning(f"Timeout attempt {attempt + 1}, retrying...")
+                await asyncio.sleep(1.0)
+                
+            except RateLimitError as e:
+                if attempt >= self.config.max_retries:
+                    raise LLMRateLimitError(f"Rate limit after {attempt + 1} attempts")
+                wait_seconds = self._parse_reset_time(e.headers)
+                logger.warning(f"Rate limit hit, waiting {wait_seconds}s...")
+                await asyncio.sleep(wait_seconds + 0.5)
+    
+    async def _do_request(self, instructions, input_data, schema, previous_response_id):
+        """Выполнить один запрос к OpenAI."""
+        return await self.client.responses.create(
+            model=self.config.model,
+            instructions=instructions,
+            input=input_data,
+            previous_response_id=previous_response_id,
+            text={"format": {"type": "json_schema", "json_schema": schema}},
+            max_output_tokens=self.config.max_completion,
+            store=True,
+            # + reasoning, verbosity, truncation из self.config если не None
+        )
+    
+    def _process_response(self, response) -> AdapterResponse:
+        """Обработать ответ OpenAI, выбросить ошибки если нужно."""
+        if response.status == "incomplete":
+            reason = response.incomplete_details.reason
+            raise LLMIncompleteError(f"Response incomplete: {reason}")
+        
+        if response.status == "failed":
+            raise LLMError(f"Response failed: {response.error.message}")
+        
+        content = response.output[0].content[0]
+        if content.type == "refusal":
+            raise LLMRefusalError(content.refusal)
+        
+        return AdapterResponse(
+            response_id=response.id,
+            parsed=json.loads(content.text),
+            usage=ResponseUsage.from_response(response),
+            headers={}  # headers доступны через with_raw_response если нужно
+        )
+    
+    async def delete_response(self, response_id: str) -> bool:
+        """
+        Удалить response из chain.
+        
+        Returns:
+            True если удалено, False если ошибка (логируется, не выбрасывается)
+        """
+        try:
+            await self.client.responses.delete(response_id)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to delete response {response_id}: {e}")
+            return False
+
+
+@dataclass
+class AdapterResponse:
+    response_id: str
+    parsed: dict  # raw JSON
+    usage: ResponseUsage
+    headers: dict
+
+
+@dataclass
+class ResponseUsage:
+    input_tokens: int
+    output_tokens: int
+    reasoning_tokens: int = 0
+    
+    @classmethod
+    def from_response(cls, response) -> "ResponseUsage":
+        usage = response.usage
+        return cls(
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            reasoning_tokens=usage.output_tokens_details.reasoning_tokens or 0
+        )
+```
+
+---
+
+## 5. Async Batch Execution
+
+```python
+# Внутри LLMClient
+
+async def create_batch(self, requests: list[LLMRequest]) -> list[T | LLMError]:
+    self.rate_limit_hits = 0  # счётчик для диагностики
+    
+    # Параллельный запуск всех запросов (retry внутри adapter.execute)
+    tasks = [self._execute_one(r) for r in requests]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Логируем если были rate limit hits
+    if self.rate_limit_hits > 0:
+        logger.warning(f"Batch completed with {self.rate_limit_hits} rate limit hits")
+        print(f"⚠️  Batch had {self.rate_limit_hits} rate limit hits — consider reviewing load")
+    
+    # Преобразуем результаты
+    return [
+        self._process_result(r, res) 
+        for r, res in zip(requests, results)
+    ]
+
+async def _execute_one(self, request: LLMRequest) -> AdapterResponse:
+    """
+    Выполнить один запрос с учётом chain и usage tracking.
+    
+    Retry выполняется внутри adapter.execute() молча.
+    """
+    
+    # Получить previous_response_id из chain (если есть)
+    previous_id = None
+    if request.entity_key:
+        previous_id = self.chain_manager.get_previous(request.entity_key)
+    
+    # Конвертировать Pydantic schema → JSON Schema
+    json_schema = self._to_json_schema(request.schema)
+    
+    # Выполнить запрос (retry внутри адаптера)
+    response = await self.adapter.execute(
+        instructions=request.instructions,
+        input_data=request.input_data,
+        schema=json_schema,
+        previous_response_id=previous_id
+    )
+    
+    # Auto-confirm: добавить в chain
+    if request.entity_key:
+        evicted = self.chain_manager.confirm(request.entity_key, response.response_id)
+        if evicted:
+            # Ошибка deletion не критична — на след. такте удалится
+            await self.adapter.delete_response(evicted)
+    
+    # Накопить usage для entity
+    if request.entity_key:
+        self._accumulate_usage(request.entity_key, response.usage)
+    
+    return response
+
+def _accumulate_usage(self, entity_key: str, usage: ResponseUsage) -> None:
+    """Накопить usage статистику в entity."""
+    entity = self.chain_manager.entities.get(entity_key)
+    if not entity:
+        return
+    
+    if "_openai" not in entity:
+        entity["_openai"] = {}
+    
+    if "usage" not in entity["_openai"]:
+        entity["_openai"]["usage"] = {
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_requests": 0
+        }
+    
+    stats = entity["_openai"]["usage"]
+    stats["total_input_tokens"] += usage.input_tokens
+    stats["total_output_tokens"] += usage.output_tokens
+    stats["total_requests"] += 1
+```
+
+---
+
+## 6. TPM контроль
+
+**MVP подход: Reactive**
+
+При лимитах 1-2M TPM и типичном такте ~250K токенов, мы вряд ли упрёмся в лимиты. Поэтому:
+
+- **Без TPMBucket** — не отслеживаем remaining заранее
+- **Reactive retry** — если rate limit, ждём и повторяем (внутри адаптера)
+- **Явное логирование** — чтобы быстро узнать если столкнёмся
+
+**После batch'а / такта:**
+
+```python
+if self.rate_limit_hits > 0:
+    logger.warning(f"Batch completed with {self.rate_limit_hits} rate limit hits")
+    print(f"⚠️  Batch had {self.rate_limit_hits} rate limit hits — consider reviewing load")
+```
+
+**Когда усложнять:**
+
+Если в логах начнут появляться `TPM LIMIT HIT` — тогда добавим:
+- Pre-flight через `/v1/responses/input_tokens` (endpoint существует)
+- TPMBucket с отслеживанием remaining
+- Chunking больших batch'ей
+
+Пока — YAGNI.
+
+---
+
+## 7. Response Chains
+
+**ChainManager** — управление цепочками per entity.
+
+```python
+class ResponseChainManager:
+    """
+    Хранит response chains для каждой сущности.
+    Позволяет модели "помнить" предыдущие ответы.
+    
+    Работает с entities in-place: при confirm() мутирует
+    entity._openai напрямую. Storage сохраняет в конце такта.
+    """
+    
+    def __init__(self, entities: list, depth: int = 0):
+        """
+        Args:
+            entities: Список персонажей и локаций (мутируются in-place)
+            depth: Глубина chain (0 = независимые запросы)
+        """
+        self.depth = depth
+        self.entities = {self._entity_key(e): e for e in entities}
+    
+    def get_previous(self, entity_key: str) -> str | None:
+        """Получить последний confirmed response_id для entity."""
+        if self.depth == 0:
+            return None
+        entity = self.entities.get(entity_key)
+        if not entity:
+            return None
+        chain = entity.get("_openai", {}).get(self._chain_key(entity_key), [])
+        return chain[-1] if chain else None
+    
+    def confirm(self, entity_key: str, response_id: str) -> str | None:
+        """
+        Добавить response в chain (мутирует entity in-place).
+        
+        Returns:
+            Вытесненный response_id (для удаления) или None
+        """
+        if self.depth == 0:
+            return None
+        
+        entity = self.entities.get(entity_key)
+        if not entity:
+            return None
+        
+        # Ensure _openai section exists
+        if "_openai" not in entity:
+            entity["_openai"] = {}
+        
+        chain_key = self._chain_key(entity_key)
+        if chain_key not in entity["_openai"]:
+            entity["_openai"][chain_key] = []
+        
+        chain = entity["_openai"][chain_key]
+        
+        evicted = None
+        if len(chain) >= self.depth:
+            evicted = chain.pop(0)
+        
+        chain.append(response_id)
+        return evicted
+```
+
+**Auto-confirm:** если `adapter.execute()` вернул результат без exception — chain обновляется автоматически. При refusal, incomplete — chain не трогаем.
+
+---
+
+## 8. Хранение состояния
+
+Chains и usage хранятся в сущностях с namespace `_openai`:
+
+```json
+// characters/bob.json
+{
+  "identity": {...},
+  "state": {...},
+  "memory": {...},
+  "_openai": {
+    "intention_chain": ["resp_abc123", "resp_def456"],
+    "memory_chain": ["resp_xyz789"],
+    "usage": {
+      "total_input_tokens": 125000,
+      "total_output_tokens": 8500,
+      "total_requests": 42
+    }
+  }
+}
+```
+
+```json
+// locations/tavern.json
+{
+  "identity": {...},
+  "state": {...},
+  "_openai": {
+    "resolution_chain": ["resp_111"],
+    "narrative_chain": ["resp_222"],
+    "usage": {
+      "total_input_tokens": 340000,
+      "total_output_tokens": 45000,
+      "total_requests": 84
+    }
+  }
+}
+```
+
+```json
+// simulation.json — агрегат по всей симуляции
+{
+  "id": "sim-01",
+  "current_tick": 42,
+  "status": "paused",
+  "_openai": {
+    "total_input_tokens": 1250000,
+    "total_output_tokens": 180000,
+    "total_requests": 420
+  }
+}
+```
+
+**Преимущества:**
+- Всё в одном файле — удобно для debug
+- Меньше I/O операций
+- Multi-provider ready: `_anthropic`, `_openrouter` не конфликтуют
+- Usage per entity — можно анализировать "дорогих" персонажей/локаций
+
+**При depth=0:** секция chains не создаётся, но usage всё равно накапливается.
+
+**Persistence:** ChainManager мутирует entities in-place. Runner загружает entities при старте симуляции, Storage сохраняет в конце каждого такта — chains и usage сохраняются автоматически.
+
+---
+
+## 9. Structured Outputs и Error Handling
+
+**Structured Outputs** гарантируют валидный JSON по схеме. Two-phase confirmation не нужен — если ответ пришёл, он валиден.
+
+**Иерархия ошибок:**
+
+```python
+class LLMError(Exception):
+    """Базовый класс ошибок LLM."""
+    pass
+
+class LLMRefusalError(LLMError):
+    """Модель отказала по safety reasons."""
+    pass
+
+class LLMIncompleteError(LLMError):
+    """Ответ обрезан (достигнут max_output_tokens)."""
+    pass
+
+class LLMRateLimitError(LLMError):
+    """Rate limit после всех retry."""
+    pass
+
+class LLMTimeoutError(LLMError):
+    """Timeout после всех retry."""
+    pass
+```
+
+**Retry в адаптере:** встроен для rate limit, timeout и transient errors. Выполняется молча. После исчерпания попыток — исключение.
+
+**В batch:** исключения ловятся через `asyncio.gather(..., return_exceptions=True)`, возвращаются в списке результатов. Фаза использует fallback.
+
+---
+
+## 10. Graceful Degradation
+
+Симуляция должна продолжаться даже при частичных сбоях LLM.
+
+**Разделение ответственности:**
+- **Транспорт (Adapter):** retry молча, timeout/rate limit handling
+- **Клиент (LLMClient):** возвращает `LLMError` в списке batch результатов
+- **Фазы:** реализуют fallback-стратегии
+
+**Fallback по фазам:**
+
+| Фаза | Что упало | Fallback | Эффект |
+|------|-----------|----------|--------|
+| **Phase 1** | Намерение персонажа | `intention: "idle"` | Персонаж бездействует один такт |
+| **Phase 2a** | Арбитр локации | `MasterResponse.empty_fallback()` | Ничего не происходит в локации |
+| **Phase 2b** | Нарратив локации | `"[Тишина в локации]"` | Лог будет скучный |
+| **Phase 4** | Память персонажа | Оставить старую память | Память не обновилась |
+
+**Пример обработки в фазе:**
+
+```python
+# Phase 1
+async def process_intentions(characters: list, llm: LLMClient) -> list[Intention]:
+    requests = [build_intention_request(c) for c in characters]
+    results = await llm.create_batch(requests)
+    
+    intentions = []
+    for char, result in zip(characters, results):
+        if isinstance(result, LLMError):
+            logger.warning(f"Phase 1 failed for {char.id}: {result}, using idle fallback")
+            intentions.append(Intention(character_id=char.id, action="idle"))
+        else:
+            intentions.append(result)
+    
+    return intentions
+```
+
+**Логирование:** все fallback'и логируются как WARNING. Систематические fallback'и — сигнал разбираться с причиной.
+
+---
+
+## 11. Конфигурация
+
+Каждая фаза с LLM имеет свою секцию конфига. Все параметры на уровне фазы — разные модели могут иметь разные лимиты.
+
+```toml
+# config.toml
+
+[phase1]
+model                   = "gpt-5-mini-2025-08-07"
+is_reasoning            = true
+max_context_tokens      = 400000
+max_completion          = 128000
+timeout                 = 600              # секунды, передаётся в httpx
+max_retries             = 3
+reasoning_effort        = "medium"
+reasoning_summary       = "auto"
+# verbosity             = "medium"         # Закомментирован = null (не передаётся)
+truncation              = "auto"           # "auto" | "disabled" | закомментировано = не передается
+response_chain_depth    = 0                # 0 = независимые запросы
+
+[phase2a]
+model                   = "gpt-5.1-2025-11-13"
+is_reasoning            = true
+max_context_tokens      = 400000
+max_completion          = 128000
+timeout                 = 600
+max_retries             = 3
+reasoning_effort        = "medium"
+reasoning_summary       = "auto"
+# verbosity             = "medium"
+truncation              = "auto"
+response_chain_depth    = 2                # Глубина цепочки
+
+[phase2b]
+model                   = "gpt-5-mini-2025-08-07"
+is_reasoning            = true
+max_context_tokens      = 400000
+max_completion          = 128000
+timeout                 = 600
+max_retries             = 3
+reasoning_effort        = "medium"
+reasoning_summary       = "auto"
+# verbosity             = "medium"
+truncation              = "auto"
+response_chain_depth    = 0
+
+[phase4]
+model                   = "gpt-5-mini-2025-08-07"
+is_reasoning            = true
+max_context_tokens      = 400000
+max_completion          = 128000
+timeout                 = 600
+max_retries             = 3
+reasoning_effort        = "medium"
+reasoning_summary       = "auto"
+# verbosity             = "medium"
+truncation              = "auto"
+response_chain_depth    = 0
+```
+
+**Pydantic модель в config.py:**
+
+```python
+class PhaseConfig(BaseModel):
+    model: str
+    is_reasoning: bool = False
+    max_context_tokens: int = 128000
+    max_completion: int = 4096
+    timeout: int = 600                    # секунды
+    max_retries: int = 3
+    reasoning_effort: str | None = None
+    reasoning_summary: str | None = None
+    verbosity: str | None = None
+    truncation: str | None = None
+    response_chain_depth: int = 0
+```
+
+---
+
+## 12. Переиспользование из k2-18
+
+**Берём с адаптацией:**
+
+| Компонент | Изменения |
+|-----------|-----------|
+| ResponseUsage | Без изменений |
+| Паттерны тестов | MockResponse, helpers |
+
+**Не берём:**
+- TPMBucket (в MVP используем reactive подход)
+- Stateful client логику
+- Two-phase confirmation
+- Background + polling
+- Terminal output формат
+
+---
+
+## 13. Структура файлов
+
+```
+src/utils/
+├── llm.py                    # LLMClient, LLMRequest, ChainManager
+├── llm_errors.py             # LLMError hierarchy
+├── llm_adapters/
+│   ├── __init__.py
+│   ├── base.py               # BaseAdapter (абстракция)
+│   └── openai.py             # OpenAIAdapter, AdapterResponse, ResponseUsage
+```
+
+---
+
+## Ссылки
+
+- OpenAI Responses API: `docs/Thing' Sandbox OpenAI Responses API Reference.md`
+- Structured Outputs: `docs/Thing' Sandbox OpenAI Structured model outputs API Reference.md`
+- Предыдущая версия: `docs/Thing' Sandbox LLM Approach.md`
+- k2-18 исходники: `C:\Users\Aski\Documents\AI\projects\semantic_graphs\k2-18\`

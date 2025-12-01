@@ -1,4 +1,4 @@
-# Thing' Sandbox: План разработки v1.0
+# Thing' Sandbox: План разработки v1.1
 
 ## Обзор
 
@@ -49,8 +49,8 @@ pytest                               # запускается (0 тестов)
 ```
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-INIT-001.md`
-- Отчёт: `docs/tasks/TS-INIT-001_REPORT.md`
+- Задание: `docs/tasks/TS-A.1-INIT-001.md`
+- Отчёт: `docs/tasks/TS-A.1-INIT-001_REPORT.md`
 - Файлы: `pyproject.toml`, `requirements.txt`, `requirements-dev.txt`, `.env.example`, `config.toml`, `README.md`
 - Структура: `src/__init__.py`, `src/utils/__init__.py`, `src/prompts/`, `tests/conftest.py`
 
@@ -76,8 +76,8 @@ pytest                               # запускается (0 тестов)
 - Тесты проходят
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-EXIT-001.md`
-- Отчёт: `docs/tasks/TS-EXIT-001_REPORT.md`
+- Задание: `docs/tasks/TS-A.2-EXIT-001.md`
+- Отчёт: `docs/tasks/TS-A.2-EXIT-001_REPORT.md`
 - Спецификация: `docs/specs/util_exit_codes.md` (обновить статус на READY)
 - Модуль: `src/utils/exit_codes.py`
 - Тесты: `tests/unit/test_exit_codes.py`
@@ -111,8 +111,8 @@ prompt_path = config.resolve_prompt("phase1_intention", sim_path)
 ```
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-CONFIG-001.md`
-- Отчёт: `docs/tasks/TS-CONFIG-001_REPORT.md`
+- Задание: `docs/tasks/TS-A.3-CONFIG-001.md`
+- Отчёт: `docs/tasks/TS-A.3-CONFIG-001_REPORT.md`
 - Спецификация: `docs/specs/core_config.md`
 - Модуль: `src/config.py`
 - Тесты: `tests/unit/test_config.py`
@@ -148,68 +148,180 @@ save_simulation(Path("simulations/test-sim"), sim)
 ```
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-STORAGE-001.md`
-- Отчёт: `docs/tasks/TS-STORAGE-001_REPORT.md`
+- Задание: `docs/tasks/TS-A.4-STORAGE-001.md`
+- Отчёт: `docs/tasks/TS-A.4-STORAGE-001_REPORT.md`
 - Спецификация: `docs/specs/util_storage.md`
 - Модуль: `src/utils/storage.py`
 - Тесты: `tests/unit/test_storage.py`
 
 ---
 
-### A.5: Спроектировать и реализовать модуль LLM Client
+### A.5a: Расширить модуль Config (Phase Config)
 
-Единый интерфейс для вызовов OpenAI: structured output, retry, rate limits.
+Добавление конфигурации фаз LLM: модели, таймауты, retry, параметры reasoning.
 
 **STATUS: не готов**
 
+**Ключевые документы:**
+- Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 11 — Конфигурация)
+- Текущая спека: `docs/specs/core_config.md`
+
 **Входные требования:**
-- A.1 готов
 - A.3 (Config) готов
 
 **Задачи:**
-- Написать спецификацию `docs/specs/util_llm.md`
-- **Обновление конфигурации:**
-  - Обновить `config.toml` — добавить секцию `[llm]` (model, timeout, max_retries, retry_delay)
-  - Обновить `src/config.py` — добавить `LLMConfig` Pydantic модель
-  - Обновить `tests/unit/test_config.py` — покрыть новые параметры
-- Реализовать `src/utils/llm.py`:
-  - Единый интерфейс `LLMClient` для вызова OpenAI
-  - Structured output через `response_format` (JSON schema)
-  - Retry с exponential backoff
-  - Обработка rate limits
-  - Логирование запросов/ответов
-- Написать юнит-тесты (с мок-клиентом)
-- Написать интеграционные тесты (с реальным API)
+- Обновить спецификацию `docs/specs/core_config.md`:
+  - Добавить PhaseConfig модель
+  - Добавить Config.phase1, Config.phase2a, Config.phase2b, Config.phase4 атрибуты
+- Обновить `config.toml`:
+  - Добавить секции `[phase1]`, `[phase2a]`, `[phase2b]`, `[phase4]`
+  - Параметры: model, is_reasoning, max_context_tokens, max_completion, timeout, max_retries, reasoning_effort, reasoning_summary, verbosity, truncation, response_chain_depth
+- Обновить `src/config.py`:
+  - Добавить `PhaseConfig` Pydantic модель
+  - Загрузка секций phase1-4 в Config
+  - Валидация параметров
+- Обновить `tests/unit/test_config.py`:
+  - Тесты загрузки PhaseConfig
+  - Тесты валидации (невалидные значения)
+  - Тесты дефолтов
 
 **Ожидаемый результат:**
 ```python
-from src.utils.llm import LLMClient
+from src.config import Config
 
-client = LLMClient(config)
-response = client.complete(
-    prompt="Generate character intention",
-    schema=IntentionResponse,  # Pydantic model или JSON schema
-)
-```
-
-**Примечание:** Интеграционные тесты требуют `OPENAI_API_KEY` в окружении. Запуск:
-```bash
-# Только юнит-тесты
-pytest tests/unit/test_llm.py -v
-
-# Только интеграционные
-pytest tests/integration/test_llm_integration.py -v -m integration
-
-# Пропустить интеграционные если нет ключа
-pytest -v -m "not integration"
+config = Config.load()
+print(config.phase1.model)           # "gpt-5-mini-2025-08-07"
+print(config.phase1.timeout)         # 600
+print(config.phase2a.response_chain_depth)  # 2
 ```
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-LLM-001.md`
-- Отчёт: `docs/tasks/TS-LLM-001_REPORT.md`
+- Задание: `docs/tasks/TS-A.5a-CONFIG-001.md`
+- Отчёт: `docs/tasks/TS-A.5a-CONFIG-001_REPORT.md`
+- Спецификация: `docs/specs/core_config.md` (обновить)
+- Модуль: `src/config.py` (обновить)
+- Конфиг: `config.toml` (обновить)
+- Тесты: `tests/unit/test_config.py` (обновить)
+
+---
+
+### A.5b: Реализовать OpenAI Adapter (транспортный слой)
+
+Адаптер для OpenAI Responses API: выполнение запросов, retry, timeout, rate limit handling.
+
+**STATUS: не готов**
+
+**Ключевые документы:**
+- Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (разделы 2, 4, 9)
+- API референс: `docs/Thing' Sandbox OpenAI Responses API Reference.md`
+- Structured Outputs: `docs/Thing' Sandbox OpenAI Structured model outputs API Reference.md`
+
+**Входные требования:**
+- A.5a (Phase Config) готов
+
+**Задачи:**
+- Написать спецификацию `docs/specs/util_llm_adapter.md`
+- Реализовать `src/utils/llm_errors.py`:
+  - Иерархия ошибок: `LLMError`, `LLMRefusalError`, `LLMIncompleteError`, `LLMRateLimitError`, `LLMTimeoutError`
+- Реализовать `src/utils/llm_adapters/base.py`:
+  - `BaseAdapter` — абстрактный интерфейс адаптера
+  - `AdapterResponse` — dataclass с response_id, parsed, usage, headers
+  - `ResponseUsage` — dataclass для статистики токенов
+- Реализовать `src/utils/llm_adapters/openai.py`:
+  - `OpenAIAdapter` — реализация для OpenAI Responses API
+  - Timeout через `httpx.Timeout`
+  - Retry для rate limit и transient errors (молча, внутри `execute()`)
+  - Обработка статусов: completed, incomplete, failed, refusal
+  - `delete_response()` с логированием ошибок
+- Написать юнит-тесты (mock AsyncOpenAI)
+- Написать интеграционные тесты (реальный API)
+
+**Ожидаемый результат:**
+```python
+from src.utils.llm_adapters.openai import OpenAIAdapter
+from src.config import Config
+
+config = Config.load()
+adapter = OpenAIAdapter(config.phase1)
+
+response = await adapter.execute(
+    instructions="You are a helpful assistant",
+    input_data="Hello",
+    schema={"type": "object", "properties": {...}}
+)
+# response.parsed — dict с ответом
+# response.usage — статистика токенов
+```
+
+**Примечание:** Интеграционные тесты требуют `OPENAI_API_KEY` в окружении.
+
+**Артефакты:**
+- Задание: `docs/tasks/TS-A.5b-ADAPTER-001.md`
+- Отчёт: `docs/tasks/TS-A.5b-ADAPTER-001_REPORT.md`
+- Спецификация: `docs/specs/util_llm_adapter.md`
+- Модули:
+  - `src/utils/llm_errors.py`
+  - `src/utils/llm_adapters/__init__.py`
+  - `src/utils/llm_adapters/base.py`
+  - `src/utils/llm_adapters/openai.py`
+- Тесты: `tests/unit/test_llm_adapter.py`, `tests/integration/test_llm_adapter_integration.py`
+
+---
+
+### A.5c: Реализовать LLM Client (фасад для фаз)
+
+Провайдер-агностичный клиент: batch execution, chains, usage accumulation.
+
+**STATUS: не готов**
+
+**Ключевые документы:**
+- Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (разделы 3, 5, 7, 8)
+- Structured Outputs: `docs/Thing' Sandbox OpenAI Structured model outputs API Reference.md`
+
+**Входные требования:**
+- A.5b готов
+
+**Задачи:**
+- Написать спецификацию `docs/specs/util_llm.md`
+- Реализовать `src/utils/llm.py`:
+  - `LLMRequest` — dataclass для запроса
+  - `LLMClient` — провайдер-агностичный фасад:
+    - `create_response()` — единичный запрос
+    - `create_batch()` — параллельные запросы через `asyncio.gather()`
+  - `ResponseChainManager` — управление цепочками per entity:
+    - Мутирует entities in-place
+    - Auto-confirm при успешном ответе
+    - Возвращает evicted response_id для удаления
+  - Pydantic → JSON Schema конверсия
+  - Usage accumulation в `entity._openai.usage`
+- Написать юнит-тесты (mock adapter)
+
+**Ожидаемый результат:**
+```python
+from src.utils.llm import LLMClient, LLMRequest
+
+client = LLMClient(adapter, entities)
+
+# Единичный запрос
+response = await client.create_response(
+    instructions="Generate intention",
+    input_data="Character context...",
+    schema=IntentionResponse,
+    entity_key="intention:bob"
+)
+
+# Batch запросов
+requests = [LLMRequest(...) for char in characters]
+results = await client.create_batch(requests)
+# results — list[IntentionResponse | LLMError]
+```
+
+**Артефакты:**
+- Задание: `docs/tasks/TS-A.5c-LLM-001.md`
+- Отчёт: `docs/tasks/TS-A.5c-LLM-001_REPORT.md`
 - Спецификация: `docs/specs/util_llm.md`
 - Модуль: `src/utils/llm.py`
-- Тесты: `tests/unit/test_llm.py`, `tests/integration/test_llm_integration.py`
+- Тесты: `tests/unit/test_llm.py`
 
 ---
 
@@ -254,8 +366,8 @@ python -m src.cli run test-sim
 ```
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-SKELETON-001.md`
-- Отчёт: `docs/tasks/TS-SKELETON-001_REPORT.md`
+- Задание: `docs/tasks/TS-B.0-SKELETON-001.md`
+- Отчёт: `docs/tasks/TS-B.0-SKELETON-001_REPORT.md`
 - Спецификации: `docs/specs/core_runner.md`, `docs/specs/core_cli.md`, `docs/specs/core_narrators.md`
 - Модули: `src/runner.py`, `src/cli.py`, `src/narrators.py`
 - Стабы: `src/phase1.py`, `src/phase2a.py`, `src/phase2b.py`, `src/phase3.py`, `src/phase4.py`
@@ -269,6 +381,10 @@ python -m src.cli run test-sim
 Разработка промпта для генерации намерений персонажей.
 
 **STATUS: не готов**
+
+**Ключевые документы:**
+- Концепция: `docs/Thing' Sandbox Concept.md`
+- Схема ответа: `src/schemas/IntentionResponse.schema.json`
 
 **Входные требования:**
 - B.0 готов
@@ -293,9 +409,13 @@ python -m src.cli run test-sim
 
 ### B.1b: Реализовать Phase 1 (намерения)
 
-Фаза 1 — сборка контекста, вызов LLM, валидация ответа.
+Фаза 1 — сборка контекста, вызов LLM, валидация ответа, graceful degradation.
 
 **STATUS: не готов**
+
+**Ключевые документы:**
+- Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 10 — Graceful Degradation)
+- Схема ответа: `src/schemas/IntentionResponse.schema.json`
 
 **Входные требования:**
 - B.1a готов (промпт разработан)
@@ -306,17 +426,18 @@ python -m src.cli run test-sim
   - Сборка контекста для персонажа (identity, state, memory, location)
   - Вызов LLMClient с промптом
   - Валидация ответа по `IntentionResponse.schema.json`
-  - Обработка ошибок
+  - **Fallback:** при `LLMError` → `intention: "idle"` + warning в лог
 - Написать юнит-тесты
 - Написать интеграционный тест с реальным LLM
 
 **Ожидаемый результат:**
 - Персонажи генерируют осмысленные намерения
+- При сбое LLM персонаж "замирает" (idle), симуляция продолжается
 - В консоли видим реальные намерения (остальные фазы — стабы)
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-PHASE1-001.md`
-- Отчёт: `docs/tasks/TS-PHASE1-001_REPORT.md`
+- Задание: `docs/tasks/TS-B.1b-PHASE1-001.md`
+- Отчёт: `docs/tasks/TS-B.1b-PHASE1-001_REPORT.md`
 - Спецификация: `docs/specs/phase_1.md`
 - Модуль: `src/phase1.py`
 - Тесты: `tests/unit/test_phase1.py`, `tests/integration/test_phase1_integration.py`
@@ -328,6 +449,9 @@ python -m src.cli run test-sim
 Фаза 3 — применение решений арбитра к состоянию симуляции (без LLM).
 
 **STATUS: не готов**
+
+**Ключевые документы:**
+- Схема входа: `src/schemas/Master.schema.json`
 
 **Входные требования:**
 - B.1b готов
@@ -347,8 +471,8 @@ python -m src.cli run test-sim
 - Память накапливается
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-PHASE3-001.md`
-- Отчёт: `docs/tasks/TS-PHASE3-001_REPORT.md`
+- Задание: `docs/tasks/TS-B.2-PHASE3-001.md`
+- Отчёт: `docs/tasks/TS-B.2-PHASE3-001_REPORT.md`
 - Спецификация: `docs/specs/phase_3.md`
 - Модуль: `src/phase3.py`
 - Тесты: `tests/unit/test_phase3.py`
@@ -360,6 +484,11 @@ python -m src.cli run test-sim
 Разработка промптов для арбитра и генерации нарратива.
 
 **STATUS: не готов**
+
+**Ключевые документы:**
+- Концепция: `docs/Thing' Sandbox Concept.md`
+- Схема арбитра: `src/schemas/Master.schema.json`
+- Схема нарратива: `src/schemas/NarrativeResponse.schema.json`
 
 **Входные требования:**
 - B.2 готов
@@ -387,9 +516,14 @@ python -m src.cli run test-sim
 
 ### B.3b: Реализовать Phase 2a и 2b (арбитр и нарратив)
 
-Фазы 2a/2b — разрешение сцены и генерация человекочитаемого описания.
+Фазы 2a/2b — разрешение сцены и генерация человекочитаемого описания, graceful degradation.
 
 **STATUS: не готов**
+
+**Ключевые документы:**
+- Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 10 — Graceful Degradation)
+- Схема арбитра: `src/schemas/Master.schema.json`
+- Схема нарратива: `src/schemas/NarrativeResponse.schema.json`
 
 **Входные требования:**
 - B.3a готов (промпты разработаны)
@@ -402,18 +536,21 @@ python -m src.cli run test-sim
   - Сборка контекста локации + все намерения персонажей
   - Вызов LLMClient
   - Валидация по `Master.schema.json`
+  - **Fallback:** при `LLMError` → `MasterResponse.empty_fallback()` + warning
 - Реализовать `src/phase2b.py` (нарратив):
   - Генерация человекочитаемого описания
   - Валидация по `NarrativeResponse.schema.json`
+  - **Fallback:** при `LLMError` → `"[Тишина в локации]"` + warning
 - Написать тесты
 
 **Ожидаемый результат:**
 - Полный цикл: намерения → разрешение → нарратив
+- При сбое арбитра — "ничего не произошло", симуляция продолжается
 - Нарратив осмысленный, отражает события сцены
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-PHASE2-001.md`
-- Отчёт: `docs/tasks/TS-PHASE2-001_REPORT.md`
+- Задание: `docs/tasks/TS-B.3b-PHASE2-001.md`
+- Отчёт: `docs/tasks/TS-B.3b-PHASE2-001_REPORT.md`
 - Спецификации: `docs/specs/phase_2a.md`, `docs/specs/phase_2b.md`
 - Модули: `src/phase2a.py`, `src/phase2b.py`
 - Тесты: `tests/unit/test_phase2a.py`, `tests/unit/test_phase2b.py`, `tests/integration/test_phase2_integration.py`
@@ -425,6 +562,10 @@ python -m src.cli run test-sim
 Разработка промпта для суммаризации памяти персонажей.
 
 **STATUS: не готов**
+
+**Ключевые документы:**
+- Концепция: `docs/Thing' Sandbox Concept.md`
+- Схема ответа: `src/schemas/SummaryResponse.schema.json`
 
 **Входные требования:**
 - B.3b готов
@@ -449,9 +590,13 @@ python -m src.cli run test-sim
 
 ### B.4b: Реализовать Phase 4 (память)
 
-Фаза 4 — FIFO-сдвиг ячеек памяти, суммаризация выпадающих событий.
+Фаза 4 — FIFO-сдвиг ячеек памяти, суммаризация выпадающих событий, graceful degradation.
 
 **STATUS: не готов**
+
+**Ключевые документы:**
+- Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 10 — Graceful Degradation)
+- Схема ответа: `src/schemas/SummaryResponse.schema.json`
 
 **Входные требования:**
 - B.4a готов (промпт разработан)
@@ -463,16 +608,18 @@ python -m src.cli run test-sim
   - FIFO-сдвиг ячеек памяти
   - Добавление новой записи (memory_entry) в ячейку 0
   - Вызов LLMClient для суммаризации
+  - **Fallback:** при `LLMError` → оставить старую память + warning
 - Написать тесты
 
 **Ожидаемый результат:**
 - Персонажи накапливают память
 - Summary корректно сжимается
 - FIFO работает правильно
+- При сбое LLM память не обновляется, симуляция продолжается
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-PHASE4-001.md`
-- Отчёт: `docs/tasks/TS-PHASE4-001_REPORT.md`
+- Задание: `docs/tasks/TS-B.4b-PHASE4-001.md`
+- Отчёт: `docs/tasks/TS-B.4b-PHASE4-001_REPORT.md`
 - Спецификация: `docs/specs/phase_4.md`
 - Модуль: `src/phase4.py`
 - Тесты: `tests/unit/test_phase4.py`, `tests/integration/test_phase4_integration.py`
@@ -521,8 +668,8 @@ cat simulations/my-sim/logs/tick_000005.md
 ```
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-MVP-001.md`
-- Отчёт: `docs/tasks/TS-MVP-001_REPORT.md`
+- Задание: `docs/tasks/TS-B.5-MVP-001.md`
+- Отчёт: `docs/tasks/TS-B.5-MVP-001_REPORT.md`
 - Модуль: `src/narrators.py` (добавить `FileNarrator`)
 - Модуль: `src/cli.py` (добавить команды `init`, улучшить `status`)
 - Тесты: `tests/integration/test_mvp.py`

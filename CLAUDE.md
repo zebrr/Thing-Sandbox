@@ -133,7 +133,7 @@ If documentation is incomplete or unclear, **ASK** user — don't assume!
 
 ## Standard Workflow
 
-1. **READ** task assignment in `docs/tasks/TS-<module>-XXX.md`
+1. **READ** task assignment in `docs/tasks/TS-<milestone>-<module>-XXX.md`
 2. **CHECK** specifications in `docs/` and `docs/specs/`
 3. **PLAN** approach (use `think`, `think hard`, `ultrathink` for complex tasks)
 4. **BACKUP** any files you'll modify
@@ -141,7 +141,7 @@ If documentation is incomplete or unclear, **ASK** user — don't assume!
 6. **QUALITY** run checks: `ruff check src/ && ruff format src/ && mypy src/`
 7. **TEST** run pytest: `python -m pytest -v`
 8. **UPDATE** specifications for modified modules
-9. **REPORT** create `docs/tasks/TS-<module>-XXX_REPORT.md`
+9. **REPORT** create `docs/tasks/TS-<milestone>-<module>-XXX_REPORT.md`
 10. **NEVER** proceed beyond the specified scope
 
 ## Communication Guidelines
@@ -179,10 +179,10 @@ python -m pytest --cov=src --cov-report=term-missing -v
 
 ## Report Template
 
-The report `docs/tasks/TS-<module>-XXX_REPORT.md` should follow this structure:
+The report `docs/tasks/TS-<milestone>-<module>-XXX_REPORT.md` should follow this structure:
 
 ```markdown
-# Task TS-<module>-XXX Completion Report
+# Task TS-<milestone>-<module>-XXX Completion Report
 
 ## Summary
 [Brief overview of what was accomplished]

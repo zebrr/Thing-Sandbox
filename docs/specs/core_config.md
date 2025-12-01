@@ -47,6 +47,22 @@ Simulation-related settings.
 
 - **memory_cells** (int, 1-10, default=5) — number of memory cells per character
 
+#### Config.phase1: PhaseConfig
+
+LLM configuration for Phase 1 (character intentions).
+
+#### Config.phase2a: PhaseConfig
+
+LLM configuration for Phase 2a (game master arbitration).
+
+#### Config.phase2b: PhaseConfig
+
+LLM configuration for Phase 2b (narrative generation).
+
+#### Config.phase4: PhaseConfig
+
+LLM configuration for Phase 4 (memory summarization).
+
 #### Config.openai_api_key: str | None
 
 OpenAI API key from `.env`. None if not set.
@@ -66,13 +82,41 @@ class SimulationConfig(BaseModel):
     memory_cells: int = Field(ge=1, le=10, default=5)
 ```
 
-### LLMConfig (placeholder for A.5)
+### PhaseConfig
+
+LLM phase configuration. All phases share the same structure but may have different values.
 
 ```python
-class LLMConfig(BaseModel):
-    # Will be populated in A.5
-    pass
+class PhaseConfig(BaseModel):
+    """Configuration for a single LLM phase."""
+    
+    model: str
+    is_reasoning: bool = False
+    max_context_tokens: int = Field(ge=1, default=128000)
+    max_completion: int = Field(ge=1, default=4096)
+    timeout: int = Field(ge=1, default=600)  # seconds
+    max_retries: int = Field(ge=0, le=10, default=3)
+    reasoning_effort: Literal["low", "medium", "high"] | None = None
+    reasoning_summary: Literal["auto", "concise", "detailed"] | None = None
+    verbosity: Literal["low", "medium", "high"] | None = None
+    truncation: Literal["auto", "disabled"] | None = None
+    response_chain_depth: int = Field(ge=0, default=0)
 ```
+
+**Field semantics:**
+- `model` — OpenAI model identifier (required, no default)
+- `is_reasoning` — whether model supports reasoning (extended thinking)
+- `max_context_tokens` — maximum input context size
+- `max_completion` — maximum output tokens (max_output_tokens in API)
+- `timeout` — request timeout in seconds (passed to httpx)
+- `max_retries` — retry attempts for rate limit / transient errors
+- `reasoning_effort` — reasoning intensity (only if is_reasoning=true)
+- `reasoning_summary` — reasoning summary mode (only if is_reasoning=true)
+- `verbosity` — output verbosity level
+- `truncation` — context truncation strategy
+- `response_chain_depth` — depth of response chain (0 = independent requests)
+
+**None handling:** Fields with `None` value are not passed to OpenAI API.
 
 ---
 
@@ -86,8 +130,54 @@ Located in project root. Required.
 [simulation]
 memory_cells = 5
 
-[llm]
-# Parameters added in A.5
+[phase1]
+model = "gpt-5-mini-2025-08-07"
+is_reasoning = true
+max_context_tokens = 400000
+max_completion = 128000
+timeout = 600
+max_retries = 3
+reasoning_effort = "medium"
+reasoning_summary = "auto"
+# verbosity = "medium"  # Commented = None (not passed to API)
+truncation = "auto"
+response_chain_depth = 0
+
+[phase2a]
+model = "gpt-5.1-2025-11-13"
+is_reasoning = true
+max_context_tokens = 400000
+max_completion = 128000
+timeout = 600
+max_retries = 3
+reasoning_effort = "medium"
+reasoning_summary = "auto"
+truncation = "auto"
+response_chain_depth = 2
+
+[phase2b]
+model = "gpt-5-mini-2025-08-07"
+is_reasoning = true
+max_context_tokens = 400000
+max_completion = 128000
+timeout = 600
+max_retries = 3
+reasoning_effort = "medium"
+reasoning_summary = "auto"
+truncation = "auto"
+response_chain_depth = 0
+
+[phase4]
+model = "gpt-5-mini-2025-08-07"
+is_reasoning = true
+max_context_tokens = 400000
+max_completion = 128000
+timeout = 600
+max_retries = 3
+reasoning_effort = "medium"
+reasoning_summary = "auto"
+truncation = "auto"
+response_chain_depth = 0
 ```
 
 ### .env
@@ -114,9 +204,11 @@ Config errors include:
 - File path that failed
 - Specific validation error (field name, constraint violated, actual value)
 
-Example:
+Examples:
 ```
 Config error: simulation.memory_cells must be between 1 and 10, got 15
+Config error: phase1.model is required
+Config error: phase2a.reasoning_effort must be 'low', 'medium', or 'high', got 'extreme'
 ```
 
 ---
@@ -139,6 +231,23 @@ from src.config import Config
 config = Config.load()
 print(config.simulation.memory_cells)  # 5
 print(config.openai_api_key)  # sk-...
+```
+
+### Phase Config Access
+
+```python
+from src.config import Config
+
+config = Config.load()
+
+# Access phase configurations
+print(config.phase1.model)           # "gpt-5-mini-2025-08-07"
+print(config.phase1.timeout)         # 600
+print(config.phase2a.response_chain_depth)  # 2
+
+# Optional fields
+print(config.phase1.reasoning_effort)  # "medium"
+print(config.phase1.verbosity)         # None (not set in config)
 ```
 
 ### Prompt Resolution
@@ -181,17 +290,28 @@ except PromptNotFoundError as e:
 
 ## Test Coverage
 
-- **test_config.py**
-  - test_load_valid_config — loads config.toml successfully
-  - test_load_missing_config — raises ConfigError
-  - test_load_invalid_toml — raises ConfigError  
-  - test_load_validation_error — invalid values raise ConfigError
-  - test_env_loading — secrets loaded from .env
-  - test_env_missing — works without .env, secrets are None
-  - test_resolve_prompt_default — returns default prompt path
-  - test_resolve_prompt_override — returns simulation override
-  - test_resolve_prompt_missing_default — raises PromptNotFoundError
-  - test_resolve_prompt_missing_override_warning — logs warning, returns default
+### Existing Tests (from A.3)
+
+- test_load_valid_config — loads config.toml successfully
+- test_load_missing_config — raises ConfigError
+- test_load_invalid_toml — raises ConfigError  
+- test_load_validation_error — invalid values raise ConfigError
+- test_env_loading — secrets loaded from .env
+- test_env_missing — works without .env, secrets are None
+- test_resolve_prompt_default — returns default prompt path
+- test_resolve_prompt_override — returns simulation override
+- test_resolve_prompt_missing_default — raises PromptNotFoundError
+- test_resolve_prompt_missing_override_warning — logs warning, returns default
+
+### New Tests (for A.5a)
+
+- test_phase_config_loading — all phase configs loaded correctly
+- test_phase_config_defaults — default values applied when not specified
+- test_phase_config_model_required — missing model raises ConfigError
+- test_phase_config_invalid_reasoning_effort — invalid enum value raises ConfigError
+- test_phase_config_invalid_timeout — timeout < 1 raises ConfigError
+- test_phase_config_optional_none — commented fields result in None
+- test_phase_config_all_phases_present — phase1, phase2a, phase2b, phase4 all accessible
 
 ---
 
@@ -222,3 +342,8 @@ Use standard `logging` module:
 - DEBUG: config values loaded (redact secrets)
 - WARNING: simulation prompt override not found
 - ERROR: validation failures before raising
+
+### PhaseConfig Parsing
+
+Each phase section is parsed independently. Missing section raises ConfigError.
+All four phase sections are required in config.toml.
