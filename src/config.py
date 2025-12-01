@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -59,16 +60,29 @@ class SimulationConfig(BaseModel):
     memory_cells: int = Field(ge=1, le=10, default=5)
 
 
-class LLMConfig(BaseModel):
-    """LLM client configuration settings.
+class PhaseConfig(BaseModel):
+    """Configuration for a single LLM phase.
 
-    Placeholder for A.5 implementation.
+    All phases share the same structure but may have different values.
+    Fields with None value are not passed to OpenAI API.
 
     Example:
-        >>> config = LLMConfig()
+        >>> config = PhaseConfig(model="gpt-4o")
+        >>> config.timeout
+        600
     """
 
-    pass
+    model: str
+    is_reasoning: bool = False
+    max_context_tokens: int = Field(ge=1, default=128000)
+    max_completion: int = Field(ge=1, default=4096)
+    timeout: int = Field(ge=1, default=600)
+    max_retries: int = Field(ge=0, le=10, default=3)
+    reasoning_effort: Literal["low", "medium", "high"] | None = None
+    reasoning_summary: Literal["auto", "concise", "detailed"] | None = None
+    verbosity: Literal["low", "medium", "high"] | None = None
+    truncation: Literal["auto", "disabled"] | None = None
+    response_chain_depth: int = Field(ge=0, default=0)
 
 
 class EnvSettings(BaseSettings):
@@ -137,7 +151,10 @@ class Config:
     def __init__(
         self,
         simulation: SimulationConfig,
-        llm: LLMConfig,
+        phase1: PhaseConfig,
+        phase2a: PhaseConfig,
+        phase2b: PhaseConfig,
+        phase4: PhaseConfig,
         openai_api_key: str | None,
         telegram_bot_token: str | None,
         project_root: Path,
@@ -146,13 +163,19 @@ class Config:
 
         Args:
             simulation: Simulation configuration settings.
-            llm: LLM configuration settings.
+            phase1: LLM configuration for Phase 1 (character intentions).
+            phase2a: LLM configuration for Phase 2a (game master arbitration).
+            phase2b: LLM configuration for Phase 2b (narrative generation).
+            phase4: LLM configuration for Phase 4 (memory summarization).
             openai_api_key: OpenAI API key from .env.
             telegram_bot_token: Telegram bot token from .env.
             project_root: Project root directory path.
         """
         self.simulation = simulation
-        self.llm = llm
+        self.phase1 = phase1
+        self.phase2a = phase2a
+        self.phase2b = phase2b
+        self.phase4 = phase4
         self.openai_api_key = openai_api_key
         self.telegram_bot_token = telegram_bot_token
         self._project_root = project_root
@@ -209,12 +232,27 @@ class Config:
                 raise ConfigError(f"Config error: simulation.{field} {msg}, got {value}")
             raise ConfigError(f"Validation error in simulation config: {e}")
 
-        # Parse LLM config (placeholder)
-        llm_data = toml_data.get("llm", {})
-        try:
-            llm = LLMConfig(**llm_data)
-        except ValidationError as e:
-            raise ConfigError(f"Validation error in llm config: {e}")
+        # Parse phase configs
+        phase_names = ["phase1", "phase2a", "phase2b", "phase4"]
+        phase_configs: dict[str, PhaseConfig] = {}
+
+        for phase_name in phase_names:
+            if phase_name not in toml_data:
+                raise ConfigError(f"Config error: missing [{phase_name}] section")
+
+            phase_data = toml_data[phase_name]
+            try:
+                phase_configs[phase_name] = PhaseConfig(**phase_data)
+            except ValidationError as e:
+                errors = e.errors()
+                if errors:
+                    err = errors[0]
+                    field = str(err["loc"][0]) if err["loc"] else "unknown"
+                    msg = err["msg"]
+                    raise ConfigError(
+                        f"Config error: {phase_name} validation failed: {msg} [{field}]"
+                    )
+                raise ConfigError(f"Validation error in {phase_name} config: {e}")
 
         # Load environment variables
         env_file = project_root / ".env"
@@ -228,7 +266,10 @@ class Config:
 
         return cls(
             simulation=simulation,
-            llm=llm,
+            phase1=phase_configs["phase1"],
+            phase2a=phase_configs["phase2a"],
+            phase2b=phase_configs["phase2b"],
+            phase4=phase_configs["phase4"],
             openai_api_key=env_settings.openai_api_key,
             telegram_bot_token=env_settings.telegram_bot_token,
             project_root=project_root,

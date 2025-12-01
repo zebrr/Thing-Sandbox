@@ -1,5 +1,54 @@
-[llm]
-# LLM client parameters will be added later
-
 [simulation]
 memory_cells = 5
+
+[phase1]
+model = "gpt-5-mini-2025-08-07"
+is_reasoning = true
+max_context_tokens = 400000
+max_completion = 128000
+timeout = 600
+max_retries = 3
+reasoning_effort = "medium"
+reasoning_summary = "auto"
+# verbosity = "medium"
+truncation = "auto"
+response_chain_depth = 0
+
+[phase2a]
+model = "gpt-5.1-2025-11-13"
+is_reasoning = true
+max_context_tokens = 400000
+max_completion = 128000
+timeout = 600
+max_retries = 3
+reasoning_effort = "medium"
+reasoning_summary = "auto"
+# verbosity = "medium"
+truncation = "auto"
+response_chain_depth = 2
+
+[phase2b]
+model = "gpt-5-mini-2025-08-07"
+is_reasoning = true
+max_context_tokens = 400000
+max_completion = 128000
+timeout = 600
+max_retries = 3
+reasoning_effort = "medium"
+reasoning_summary = "auto"
+# verbosity = "medium"
+truncation = "auto"
+response_chain_depth = 0
+
+[phase4]
+model = "gpt-5-mini-2025-08-07"
+is_reasoning = true
+max_context_tokens = 400000
+max_completion = 128000
+timeout = 600
+max_retries = 3
+reasoning_effort = "medium"
+reasoning_summary = "auto"
+# verbosity = "medium"
+truncation = "auto"
+response_chain_depth = 0
