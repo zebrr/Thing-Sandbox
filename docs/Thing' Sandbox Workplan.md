@@ -160,7 +160,7 @@ save_simulation(Path("simulations/test-sim"), sim)
 
 Добавление конфигурации фаз LLM: модели, таймауты, retry, параметры reasoning.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 11 — Конфигурация)
@@ -205,9 +205,9 @@ print(config.phase2a.response_chain_depth)  # 2
 
 ---
 
-### A.5b: Реализовать OpenAI Adapter (транспортный слой)
+### A.5b: Реализовать LLM Errors и OpenAI Adapter (транспортный слой)
 
-Адаптер для OpenAI Responses API: выполнение запросов, retry, timeout, rate limit handling.
+Общие типы/исключения и адаптер для OpenAI Responses API: выполнение запросов, retry, timeout, rate limit handling.
 
 **STATUS: не готов**
 
@@ -218,17 +218,17 @@ print(config.phase2a.response_chain_depth)  # 2
 
 **Входные требования:**
 - A.5a (Phase Config) готов
+- Спецификации готовы: `docs/specs/util_llm_errors.md`, `docs/specs/util_llm_adapter_openai.md`
 
 **Задачи:**
-- Написать спецификацию `docs/specs/util_llm_adapter.md`
 - Реализовать `src/utils/llm_errors.py`:
   - Иерархия ошибок: `LLMError`, `LLMRefusalError`, `LLMIncompleteError`, `LLMRateLimitError`, `LLMTimeoutError`
 - Реализовать `src/utils/llm_adapters/base.py`:
-  - `BaseAdapter` — абстрактный интерфейс адаптера
-  - `AdapterResponse` — dataclass с response_id, parsed, usage, headers
+  - `AdapterResponse` — generic dataclass с response_id, parsed, usage
   - `ResponseUsage` — dataclass для статистики токенов
 - Реализовать `src/utils/llm_adapters/openai.py`:
   - `OpenAIAdapter` — реализация для OpenAI Responses API
+  - Использует `responses.parse()` с `text_format=Pydantic`
   - Timeout через `httpx.Timeout`
   - Retry для rate limit и transient errors (молча, внутри `execute()`)
   - Обработка статусов: completed, incomplete, failed, refusal
@@ -238,18 +238,23 @@ print(config.phase2a.response_chain_depth)  # 2
 
 **Ожидаемый результат:**
 ```python
+from pydantic import BaseModel
 from src.utils.llm_adapters.openai import OpenAIAdapter
 from src.config import Config
+
+class SimpleResponse(BaseModel):
+    answer: str
 
 config = Config.load()
 adapter = OpenAIAdapter(config.phase1)
 
 response = await adapter.execute(
-    instructions="You are a helpful assistant",
-    input_data="Hello",
-    schema={"type": "object", "properties": {...}}
+    instructions="Answer briefly.",
+    input_data="What is 2+2?",
+    schema=SimpleResponse,
 )
-# response.parsed — dict с ответом
+# response.parsed — экземпляр SimpleResponse
+# response.parsed.answer — "4"
 # response.usage — статистика токенов
 ```
 
@@ -258,13 +263,15 @@ response = await adapter.execute(
 **Артефакты:**
 - Задание: `docs/tasks/TS-A.5b-ADAPTER-001.md`
 - Отчёт: `docs/tasks/TS-A.5b-ADAPTER-001_REPORT.md`
-- Спецификация: `docs/specs/util_llm_adapter.md`
+- Спецификации (уже готовы, обновить статус на READY после реализации):
+  - `docs/specs/util_llm_errors.md`
+  - `docs/specs/util_llm_adapter_openai.md`
 - Модули:
   - `src/utils/llm_errors.py`
   - `src/utils/llm_adapters/__init__.py`
   - `src/utils/llm_adapters/base.py`
   - `src/utils/llm_adapters/openai.py`
-- Тесты: `tests/unit/test_llm_adapter.py`, `tests/integration/test_llm_adapter_integration.py`
+- Тесты: `tests/unit/test_llm_errors.py`, `tests/unit/test_llm_adapter_openai.py`, `tests/integration/test_llm_adapter_openai_live.py`
 
 ---
 

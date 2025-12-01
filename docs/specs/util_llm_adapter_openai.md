@@ -86,7 +86,7 @@ Adapter receives `PhaseConfig` from `src/config.py`. Required fields:
 | model | str | Model identifier (e.g., "gpt-5-mini-2025-08-07") |
 | timeout | int | httpx timeout in seconds |
 | max_retries | int | Retry attempts for rate limit/timeout |
-| max_output_tokens | int | max_output_tokens parameter |
+| max_completion | int | Maps to API's max_output_tokens parameter |
 | is_reasoning | bool | Enables reasoning parameters |
 | reasoning_effort | str \| None | "minimal", "low", "medium", "high" |
 | reasoning_summary | str \| None | "auto", "concise", "detailed" |
@@ -107,7 +107,7 @@ response = await self.client.responses.parse(
     instructions=instructions,
     input=input_data,
     text_format=schema,
-    max_output_tokens=config.max_output_tokens,
+    max_output_tokens=config.max_completion,  # PhaseConfig.max_completion → API max_output_tokens
     previous_response_id=previous_response_id,
     store=True,
     # Conditional parameters:
@@ -153,10 +153,11 @@ def _process_response(self, response) -> AdapterResponse[T]:
     if response.status == "failed":
         raise LLMError(f"Request failed: {response.error.message}")
     
-    # Check for refusal
+    # Check for refusal (response.output[0].content[0] contains refusal info)
+    # Note: With responses.parse(), output_parsed will be None on refusal
     content = response.output[0].content[0]
     if content.type == "refusal":
-        raise LLMRefusalError(content.refusal)
+        raise LLMRefusalError(content.refusal)  # content.refusal is a string
     
     # Extract usage
     usage = ResponseUsage(
@@ -166,6 +167,7 @@ def _process_response(self, response) -> AdapterResponse[T]:
     )
     
     # Return parsed response (SDK already parsed via text_format)
+    # output_parsed contains Pydantic model instance
     return AdapterResponse(
         response_id=response.id,
         parsed=response.output_parsed,

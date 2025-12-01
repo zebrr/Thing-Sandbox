@@ -21,6 +21,7 @@ warn_unused_ignores = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+ignore_glob = ["*_backup_*"]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')"
 ]
