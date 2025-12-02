@@ -33,7 +33,11 @@ import httpx
 from openai import APITimeoutError, AsyncOpenAI, RateLimitError
 from pydantic import BaseModel
 
-from src.utils.llm_adapters.base import AdapterResponse, ResponseUsage
+from src.utils.llm_adapters.base import (
+    AdapterResponse,
+    ResponseDebugInfo,
+    ResponseUsage,
+)
 from src.utils.llm_errors import (
     LLMError,
     LLMIncompleteError,
@@ -263,31 +267,70 @@ class OpenAIAdapter:
         input_tokens = getattr(usage_obj, "input_tokens", 0)
         output_tokens = getattr(usage_obj, "output_tokens", 0)
 
-        # Extract reasoning tokens from details
+        # Extract reasoning tokens from output_tokens_details
         output_tokens_details = getattr(usage_obj, "output_tokens_details", None)
         reasoning_tokens = 0
         if output_tokens_details:
             reasoning_tokens = getattr(output_tokens_details, "reasoning_tokens", 0) or 0
 
+        # Extract cached_tokens from input_tokens_details
+        input_tokens_details = getattr(usage_obj, "input_tokens_details", None)
+        cached_tokens = 0
+        if input_tokens_details:
+            cached_tokens = getattr(input_tokens_details, "cached_tokens", 0) or 0
+
+        # Extract total_tokens
+        total_tokens = getattr(usage_obj, "total_tokens", 0)
+
         usage = ResponseUsage(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             reasoning_tokens=reasoning_tokens,
+            cached_tokens=cached_tokens,
+            total_tokens=total_tokens,
         )
 
+        # Extract debug info
         response_id = getattr(response, "id", "")
+        model = getattr(response, "model", "")
+        created_at = getattr(response, "created_at", 0)
+        service_tier = getattr(response, "service_tier", None)
+
+        # Extract reasoning summary if present
+        reasoning_summary: list[str] | None = None
+        for item in output:
+            if getattr(item, "type", None) == "reasoning":
+                summaries = getattr(item, "summary", [])
+                if summaries:
+                    reasoning_summary = [
+                        getattr(s, "text", "")
+                        for s in summaries
+                        if getattr(s, "type", None) == "summary_text"
+                    ]
+                break  # Reasoning block is always first if present
+
+        debug = ResponseDebugInfo(
+            model=model,
+            created_at=created_at,
+            service_tier=service_tier,
+            reasoning_summary=reasoning_summary,
+        )
+
         logger.debug(
-            "Response received: id=%s, input=%d, output=%d, reasoning=%d",
+            "Response received: id=%s, model=%s, input=%d, output=%d, reasoning=%d, cached=%d",
             response_id,
+            model,
             input_tokens,
             output_tokens,
             reasoning_tokens,
+            cached_tokens,
         )
 
         return AdapterResponse(
             response_id=response_id,
             parsed=output_parsed,
             usage=usage,
+            debug=debug,
         )
 
     def _parse_reset_ms(self, headers: httpx.Headers) -> float:

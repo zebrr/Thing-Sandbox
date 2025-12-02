@@ -10,7 +10,11 @@ from src.utils.llm_errors import (
     LLMRefusalError,
     LLMTimeoutError,
 )
-from src.utils.llm_adapters.base import AdapterResponse, ResponseUsage
+from src.utils.llm_adapters.base import (
+    AdapterResponse,
+    ResponseDebugInfo,
+    ResponseUsage,
+)
 
 
 class TestLLMErrorHierarchy:
@@ -136,6 +140,8 @@ class TestResponseUsage:
         assert usage.input_tokens == 100
         assert usage.output_tokens == 50
         assert usage.reasoning_tokens == 0
+        assert usage.cached_tokens == 0
+        assert usage.total_tokens == 0
 
     def test_reasoning_tokens_default(self) -> None:
         """Reasoning tokens defaults to 0."""
@@ -146,6 +152,16 @@ class TestResponseUsage:
         """Can specify reasoning tokens."""
         usage = ResponseUsage(input_tokens=100, output_tokens=50, reasoning_tokens=25)
         assert usage.reasoning_tokens == 25
+
+    def test_with_cached_tokens(self) -> None:
+        """Can specify cached tokens."""
+        usage = ResponseUsage(input_tokens=100, output_tokens=50, cached_tokens=80)
+        assert usage.cached_tokens == 80
+
+    def test_with_total_tokens(self) -> None:
+        """Can specify total tokens."""
+        usage = ResponseUsage(input_tokens=100, output_tokens=50, total_tokens=150)
+        assert usage.total_tokens == 150
 
     def test_zero_tokens(self) -> None:
         """Handles zero token counts."""
@@ -160,10 +176,57 @@ class TestResponseUsage:
             input_tokens=1_000_000,
             output_tokens=500_000,
             reasoning_tokens=100_000,
+            cached_tokens=800_000,
+            total_tokens=1_500_000,
         )
         assert usage.input_tokens == 1_000_000
         assert usage.output_tokens == 500_000
         assert usage.reasoning_tokens == 100_000
+        assert usage.cached_tokens == 800_000
+        assert usage.total_tokens == 1_500_000
+
+
+class TestResponseDebugInfo:
+    """Tests for ResponseDebugInfo dataclass."""
+
+    def test_basic_creation(self) -> None:
+        """Can create with required fields."""
+        debug = ResponseDebugInfo(model="gpt-4o", created_at=1700000000)
+        assert debug.model == "gpt-4o"
+        assert debug.created_at == 1700000000
+        assert debug.service_tier is None
+        assert debug.reasoning_summary is None
+
+    def test_with_service_tier(self) -> None:
+        """Can specify service tier."""
+        debug = ResponseDebugInfo(
+            model="gpt-4o", created_at=1700000000, service_tier="default"
+        )
+        assert debug.service_tier == "default"
+
+    def test_with_reasoning_summary(self) -> None:
+        """Can specify reasoning summary."""
+        debug = ResponseDebugInfo(
+            model="gpt-4o",
+            created_at=1700000000,
+            reasoning_summary=["Step 1: analyze", "Step 2: conclude"],
+        )
+        assert debug.reasoning_summary is not None
+        assert len(debug.reasoning_summary) == 2
+        assert "analyze" in debug.reasoning_summary[0]
+
+    def test_all_fields(self) -> None:
+        """Can specify all fields."""
+        debug = ResponseDebugInfo(
+            model="gpt-4o-2024-11-20",
+            created_at=1700000000,
+            service_tier="priority",
+            reasoning_summary=["Thinking..."],
+        )
+        assert debug.model == "gpt-4o-2024-11-20"
+        assert debug.created_at == 1700000000
+        assert debug.service_tier == "priority"
+        assert debug.reasoning_summary == ["Thinking..."]
 
 
 class TestAdapterResponse:
@@ -184,25 +247,30 @@ class TestAdapterResponse:
     def test_basic_creation(self) -> None:
         """Can create with Pydantic model."""
         usage = ResponseUsage(input_tokens=10, output_tokens=5)
+        debug = ResponseDebugInfo(model="gpt-4o", created_at=1700000000)
         parsed = self.SimpleSchema(answer="42")
         response = AdapterResponse(
             response_id="resp_abc123",
             parsed=parsed,
             usage=usage,
+            debug=debug,
         )
         assert response.response_id == "resp_abc123"
         assert response.parsed.answer == "42"
         assert response.usage.input_tokens == 10
+        assert response.debug.model == "gpt-4o"
 
     def test_generic_typing(self) -> None:
         """Works with different Pydantic model types."""
         usage = ResponseUsage(input_tokens=10, output_tokens=5)
+        debug = ResponseDebugInfo(model="gpt-4o", created_at=1700000000)
 
         # Simple schema
         simple_response: AdapterResponse[self.SimpleSchema] = AdapterResponse(
             response_id="resp_1",
             parsed=self.SimpleSchema(answer="test"),
             usage=usage,
+            debug=debug,
         )
         assert simple_response.parsed.answer == "test"
 
@@ -211,6 +279,7 @@ class TestAdapterResponse:
             response_id="resp_2",
             parsed=self.ComplexSchema(text="hello", number=42, items=["a", "b"]),
             usage=usage,
+            debug=debug,
         )
         assert complex_response.parsed.text == "hello"
         assert complex_response.parsed.number == 42
@@ -219,6 +288,7 @@ class TestAdapterResponse:
     def test_response_id_format(self) -> None:
         """Response ID can be any string."""
         usage = ResponseUsage(input_tokens=10, output_tokens=5)
+        debug = ResponseDebugInfo(model="gpt-4o", created_at=1700000000)
         parsed = self.SimpleSchema(answer="test")
 
         # Various ID formats
@@ -234,16 +304,19 @@ class TestAdapterResponse:
                 response_id=resp_id,
                 parsed=parsed,
                 usage=usage,
+                debug=debug,
             )
             assert response.response_id == resp_id
 
     def test_unicode_content(self) -> None:
         """Handles unicode content in parsed response."""
         usage = ResponseUsage(input_tokens=10, output_tokens=5)
+        debug = ResponseDebugInfo(model="gpt-4o", created_at=1700000000)
         parsed = self.SimpleSchema(answer="Привет, мир! 🌍")
         response = AdapterResponse(
             response_id="resp_unicode",
             parsed=parsed,
             usage=usage,
+            debug=debug,
         )
         assert response.parsed.answer == "Привет, мир! 🌍"

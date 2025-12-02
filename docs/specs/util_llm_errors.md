@@ -11,6 +11,44 @@ response data types used by all adapter implementations.
 
 ### Data Types
 
+#### ResponseUsage
+
+Token usage statistics from API response.
+
+```python
+@dataclass
+class ResponseUsage:
+    input_tokens: int
+    output_tokens: int
+    reasoning_tokens: int = 0
+    cached_tokens: int = 0
+    total_tokens: int = 0
+```
+
+- **input_tokens** — tokens in prompt
+- **output_tokens** — tokens in response (excluding reasoning)
+- **reasoning_tokens** — reasoning tokens (for reasoning models, 0 otherwise)
+- **cached_tokens** — tokens served from prompt cache (0 if no caching)
+- **total_tokens** — total token count (input + output)
+
+#### ResponseDebugInfo
+
+Debug information extracted from API response. Always populated.
+
+```python
+@dataclass
+class ResponseDebugInfo:
+    model: str
+    created_at: int
+    service_tier: str | None = None
+    reasoning_summary: list[str] | None = None
+```
+
+- **model** — actual model used (may differ from requested due to aliases)
+- **created_at** — Unix timestamp of response creation
+- **service_tier** — "default", "flex", "priority", or None
+- **reasoning_summary** — list of reasoning step summaries (for reasoning models with summary enabled)
+
 #### AdapterResponse[T]
 
 Container for successful API response. Generic over Pydantic model type.
@@ -26,27 +64,13 @@ class AdapterResponse(Generic[T]):
     response_id: str
     parsed: T
     usage: ResponseUsage
+    debug: ResponseDebugInfo
 ```
 
 - **response_id** — provider's response ID (for chains, deletion, debugging)
 - **parsed** — parsed response as Pydantic model instance
 - **usage** — token usage statistics
-
-#### ResponseUsage
-
-Token usage statistics from API response.
-
-```python
-@dataclass
-class ResponseUsage:
-    input_tokens: int
-    output_tokens: int
-    reasoning_tokens: int = 0
-```
-
-- **input_tokens** — tokens in prompt
-- **output_tokens** — tokens in response (excluding reasoning)
-- **reasoning_tokens** — reasoning tokens (for reasoning models, 0 otherwise)
+- **debug** — always populated with available debug info
 
 ---
 
@@ -172,12 +196,22 @@ class ResponseUsage:
     input_tokens: int
     output_tokens: int
     reasoning_tokens: int = 0
+    cached_tokens: int = 0
+    total_tokens: int = 0
+
+@dataclass
+class ResponseDebugInfo:
+    model: str
+    created_at: int
+    service_tier: str | None = None
+    reasoning_summary: list[str] | None = None
 
 @dataclass
 class AdapterResponse(Generic[T]):
     response_id: str
     parsed: T
     usage: ResponseUsage
+    debug: ResponseDebugInfo
 ```
 
 ---
@@ -241,6 +275,15 @@ print(response.parsed.field_name)
 print(f"Input: {response.usage.input_tokens}")
 print(f"Output: {response.usage.output_tokens}")
 print(f"Reasoning: {response.usage.reasoning_tokens}")
+print(f"Cached: {response.usage.cached_tokens}")
+print(f"Total: {response.usage.total_tokens}")
+
+# Access debug info
+print(f"Model: {response.debug.model}")
+print(f"Created: {response.debug.created_at}")
+print(f"Tier: {response.debug.service_tier}")
+if response.debug.reasoning_summary:
+    print(f"Reasoning: {response.debug.reasoning_summary}")
 
 # Store response_id for chain
 chain.append(response.response_id)

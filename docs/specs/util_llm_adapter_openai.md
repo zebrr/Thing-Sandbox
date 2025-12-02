@@ -152,26 +152,43 @@ def _process_response(self, response) -> AdapterResponse[T]:
         raise LLMIncompleteError(response.incomplete_details.reason)
     if response.status == "failed":
         raise LLMError(f"Request failed: {response.error.message}")
-    
+
     # Check for refusal (response.output[0].content[0] contains refusal info)
     # Note: With responses.parse(), output_parsed will be None on refusal
     content = response.output[0].content[0]
     if content.type == "refusal":
         raise LLMRefusalError(content.refusal)  # content.refusal is a string
-    
-    # Extract usage
+
+    # Extract usage (including cached_tokens and total_tokens)
     usage = ResponseUsage(
         input_tokens=response.usage.input_tokens,
         output_tokens=response.usage.output_tokens,
         reasoning_tokens=response.usage.output_tokens_details.reasoning_tokens or 0,
+        cached_tokens=response.usage.input_tokens_details.cached_tokens or 0,
+        total_tokens=response.usage.total_tokens,
     )
-    
+
+    # Extract debug info
+    reasoning_summary = None
+    for item in response.output:
+        if item.type == "reasoning":
+            reasoning_summary = [s.text for s in item.summary if s.type == "summary_text"]
+            break
+
+    debug = ResponseDebugInfo(
+        model=response.model,
+        created_at=response.created_at,
+        service_tier=response.service_tier,
+        reasoning_summary=reasoning_summary,
+    )
+
     # Return parsed response (SDK already parsed via text_format)
     # output_parsed contains Pydantic model instance
     return AdapterResponse(
         response_id=response.id,
         parsed=response.output_parsed,
         usage=usage,
+        debug=debug,
     )
 ```
 
@@ -200,7 +217,7 @@ def _parse_reset_ms(self, headers: httpx.Headers) -> float:
 ```
 src/utils/llm_adapters/
 ├── __init__.py
-├── base.py                   # AdapterResponse, ResponseUsage
+├── base.py                   # AdapterResponse, ResponseDebugInfo, ResponseUsage
 └── openai.py                 # OpenAIAdapter (this module)
 ```
 
@@ -223,7 +240,7 @@ from src.utils.llm_errors import (
     LLMRefusalError,
     LLMTimeoutError,
 )
-from src.utils.llm_adapters.base import AdapterResponse, ResponseUsage
+from src.utils.llm_adapters.base import AdapterResponse, ResponseDebugInfo, ResponseUsage
 
 logger = logging.getLogger(__name__)
 

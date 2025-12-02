@@ -13,8 +13,7 @@ from pydantic import BaseModel
 
 from src.config import Config
 from src.utils.llm_adapters import OpenAIAdapter
-from src.utils.llm_errors import LLMIncompleteError, LLMTimeoutError, LLMError
-
+from src.utils.llm_errors import LLMError, LLMIncompleteError, LLMTimeoutError
 
 pytestmark = [
     pytest.mark.integration,
@@ -102,7 +101,7 @@ class TestComplexStructuredOutput:
     async def test_complex_structured_output(self, adapter: OpenAIAdapter) -> None:
         """Test complex structured output with nested schema."""
         response = await adapter.execute(
-            instructions="You are a helpful math tutor. Guide the user through the solution step by step.",
+            instructions="You are a helpful math tutor. Guide the user step by step.",
             input_data="How can I solve 8x + 7 = -23?",
             schema=MathReasoning,
         )
@@ -156,7 +155,7 @@ class TestIncompleteResponse:
 
         with pytest.raises(LLMIncompleteError) as exc_info:
             await adapter.execute(
-                instructions="You are a helpful math tutor. Solve with detailed step-by-step proof.",
+                instructions="You are a math tutor. Solve with detailed step-by-step proof.",
                 input_data=(
                     "Prove that there are infinitely many prime numbers. "
                     "Show complete formal proof with all steps explained in detail."
@@ -250,6 +249,11 @@ class TestReasoningModel:
         assert "56088" in response.parsed.answer or "56,088" in response.parsed.answer
         # Reasoning models should use reasoning tokens
         assert response.usage.reasoning_tokens > 0
+        # If reasoning_summary is configured, check it's a list
+        if integration_config.reasoning_summary:
+            assert response.debug.reasoning_summary is None or isinstance(
+                response.debug.reasoning_summary, list
+            )
 
 
 class TestErrorHandling:
@@ -305,3 +309,31 @@ class TestUsageTracking:
         assert response.usage.output_tokens > 0
         # reasoning_tokens may be 0 for non-reasoning models
         assert response.usage.reasoning_tokens >= 0
+        # New fields
+        assert response.usage.cached_tokens >= 0
+        assert response.usage.total_tokens > 0
+        expected_min = response.usage.input_tokens + response.usage.output_tokens
+        assert response.usage.total_tokens >= expected_min
+
+
+class TestDebugInfo:
+    """Tests for debug information extraction."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(60)
+    async def test_debug_info_populated(self, adapter: OpenAIAdapter) -> None:
+        """Test that debug info is always populated."""
+        response = await adapter.execute(
+            instructions="Answer briefly.",
+            input_data="Say hello.",
+            schema=SimpleAnswer,
+        )
+
+        # Debug info should always be present
+        assert response.debug is not None
+        assert response.debug.model != ""
+        assert response.debug.created_at > 0
+        # service_tier may be None or a string
+        assert response.debug.service_tier is None or isinstance(response.debug.service_tier, str)
+        # reasoning_summary is None for non-reasoning models
+        # (reasoning model test is in TestReasoningModel)

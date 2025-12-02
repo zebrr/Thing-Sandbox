@@ -11,7 +11,11 @@ Example:
     >>> adapter = OpenAIAdapter(config.phase1)
 """
 
-from src.utils.llm_adapters.base import AdapterResponse, ResponseUsage
+from src.utils.llm_adapters.base import (
+    AdapterResponse,
+    ResponseDebugInfo,
+    ResponseUsage,
+)
 from src.utils.llm_adapters.openai import OpenAIAdapter
 
-__all__ = ["AdapterResponse", "ResponseUsage", "OpenAIAdapter"]
+__all__ = ["AdapterResponse", "ResponseDebugInfo", "ResponseUsage", "OpenAIAdapter"]

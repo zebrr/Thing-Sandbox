@@ -77,6 +77,12 @@ def create_mock_response(
     input_tokens: int = 100,
     output_tokens: int = 50,
     reasoning_tokens: int = 0,
+    cached_tokens: int = 0,
+    total_tokens: int | None = None,
+    model: str = "gpt-test-model",
+    created_at: int = 1700000000,
+    service_tier: str | None = "default",
+    reasoning_summary: list[str] | None = None,
     incomplete_reason: str | None = None,
     error_message: str | None = None,
 ) -> MagicMock:
@@ -85,26 +91,51 @@ def create_mock_response(
     mock_response.id = response_id
     mock_response.status = status
     mock_response.output_parsed = output_parsed
+    mock_response.model = model
+    mock_response.created_at = created_at
+    mock_response.service_tier = service_tier
 
-    # Create content mock
+    # Create output list
+    output_list = []
+
+    # Add reasoning block if summary provided
+    if reasoning_summary is not None:
+        reasoning_mock = MagicMock()
+        reasoning_mock.type = "reasoning"
+        reasoning_mock.summary = [
+            MagicMock(type="summary_text", text=text) for text in reasoning_summary
+        ]
+        output_list.append(reasoning_mock)
+
+    # Create content mock (message block)
     content_mock = MagicMock()
     content_mock.type = content_type
     if refusal:
         content_mock.refusal = refusal
 
-    # Create output mock
     output_mock = MagicMock()
     output_mock.content = [content_mock]
-    mock_response.output = [output_mock]
+    output_list.append(output_mock)
+
+    mock_response.output = output_list
 
     # Create usage mock
     usage_mock = MagicMock()
     usage_mock.input_tokens = input_tokens
     usage_mock.output_tokens = output_tokens
+    usage_mock.total_tokens = (
+        total_tokens if total_tokens is not None else (input_tokens + output_tokens)
+    )
 
-    details_mock = MagicMock()
-    details_mock.reasoning_tokens = reasoning_tokens
-    usage_mock.output_tokens_details = details_mock
+    # input_tokens_details
+    input_details_mock = MagicMock()
+    input_details_mock.cached_tokens = cached_tokens
+    usage_mock.input_tokens_details = input_details_mock
+
+    # output_tokens_details
+    output_details_mock = MagicMock()
+    output_details_mock.reasoning_tokens = reasoning_tokens
+    usage_mock.output_tokens_details = output_details_mock
 
     mock_response.usage = usage_mock
 
@@ -171,6 +202,8 @@ class TestOpenAIAdapterExecuteSuccess:
             assert response.usage.input_tokens == 100
             assert response.usage.output_tokens == 50
             assert response.usage.reasoning_tokens == 0
+            assert response.debug is not None
+            assert response.debug.model == "gpt-test-model"
 
     @pytest.mark.asyncio
     async def test_reasoning_tokens_extracted(
@@ -296,6 +329,103 @@ class TestOpenAIAdapterExecuteSuccess:
             call_kwargs = adapter.client.responses.parse.call_args.kwargs
             assert call_kwargs["truncation"] == "auto"
             assert call_kwargs["verbosity"] == "high"
+
+    @pytest.mark.asyncio
+    async def test_cached_tokens_extracted(self, phase_config: PhaseConfig) -> None:
+        """Extracts cached_tokens from input_tokens_details."""
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
+            adapter = OpenAIAdapter(phase_config)
+
+            mock_response = create_mock_response(
+                output_parsed=SimpleAnswer(answer="42"),
+                input_tokens=1000,
+                cached_tokens=800,
+            )
+
+            adapter.client.responses.parse = AsyncMock(return_value=mock_response)
+
+            response = await adapter.execute(
+                instructions="Test",
+                input_data="Test",
+                schema=SimpleAnswer,
+            )
+
+            assert response.usage.cached_tokens == 800
+
+    @pytest.mark.asyncio
+    async def test_total_tokens_extracted(self, phase_config: PhaseConfig) -> None:
+        """Extracts total_tokens from usage."""
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
+            adapter = OpenAIAdapter(phase_config)
+
+            mock_response = create_mock_response(
+                output_parsed=SimpleAnswer(answer="42"),
+                input_tokens=100,
+                output_tokens=50,
+                total_tokens=150,
+            )
+
+            adapter.client.responses.parse = AsyncMock(return_value=mock_response)
+
+            response = await adapter.execute(
+                instructions="Test",
+                input_data="Test",
+                schema=SimpleAnswer,
+            )
+
+            assert response.usage.total_tokens == 150
+
+    @pytest.mark.asyncio
+    async def test_debug_info_populated(self, phase_config: PhaseConfig) -> None:
+        """Debug info is always populated."""
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
+            adapter = OpenAIAdapter(phase_config)
+
+            mock_response = create_mock_response(
+                output_parsed=SimpleAnswer(answer="42"),
+                model="gpt-4.1-mini-2025-04-14",
+                created_at=1700000000,
+                service_tier="default",
+            )
+
+            adapter.client.responses.parse = AsyncMock(return_value=mock_response)
+
+            response = await adapter.execute(
+                instructions="Test",
+                input_data="Test",
+                schema=SimpleAnswer,
+            )
+
+            assert response.debug.model == "gpt-4.1-mini-2025-04-14"
+            assert response.debug.created_at == 1700000000
+            assert response.debug.service_tier == "default"
+            assert response.debug.reasoning_summary is None
+
+    @pytest.mark.asyncio
+    async def test_reasoning_summary_extracted(
+        self, reasoning_config: PhaseConfig
+    ) -> None:
+        """Extracts reasoning summary for reasoning models."""
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
+            adapter = OpenAIAdapter(reasoning_config)
+
+            mock_response = create_mock_response(
+                output_parsed=SimpleAnswer(answer="42"),
+                reasoning_summary=["Considering the math...", "The answer is 42."],
+                reasoning_tokens=256,
+            )
+
+            adapter.client.responses.parse = AsyncMock(return_value=mock_response)
+
+            response = await adapter.execute(
+                instructions="Think step by step.",
+                input_data="What is 6 * 7?",
+                schema=SimpleAnswer,
+            )
+
+            assert response.debug.reasoning_summary is not None
+            assert len(response.debug.reasoning_summary) == 2
+            assert "Considering the math" in response.debug.reasoning_summary[0]
 
 
 class TestOpenAIAdapterRetryLogic:
