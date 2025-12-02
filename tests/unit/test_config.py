@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from src.config import (
     Config,
@@ -66,6 +67,66 @@ class TestSimulationConfig:
     def test_memory_cells_maximum_boundary(self) -> None:
         config = SimulationConfig(memory_cells=10)
         assert config.memory_cells == 10
+
+    def test_default_mode_single(self) -> None:
+        """Test default_mode='single' loads correctly."""
+        config = SimulationConfig(default_mode="single")
+        assert config.default_mode == "single"
+
+    def test_default_mode_continuous(self) -> None:
+        """Test default_mode='continuous' loads correctly."""
+        config = SimulationConfig(default_mode="continuous")
+        assert config.default_mode == "continuous"
+
+    def test_default_mode_default_value(self) -> None:
+        """Test default_mode defaults to 'single'."""
+        config = SimulationConfig()
+        assert config.default_mode == "single"
+
+    def test_default_interval_valid(self) -> None:
+        """Test default_interval >= 1 loads correctly."""
+        config = SimulationConfig(default_interval=300)
+        assert config.default_interval == 300
+
+    def test_default_interval_minimum_boundary(self) -> None:
+        """Test default_interval = 1 is valid."""
+        config = SimulationConfig(default_interval=1)
+        assert config.default_interval == 1
+
+    def test_default_interval_default_value(self) -> None:
+        """Test default_interval defaults to 600."""
+        config = SimulationConfig()
+        assert config.default_interval == 600
+
+    def test_default_ticks_limit_zero(self) -> None:
+        """Test default_ticks_limit = 0 means unlimited."""
+        config = SimulationConfig(default_ticks_limit=0)
+        assert config.default_ticks_limit == 0
+
+    def test_default_ticks_limit_positive(self) -> None:
+        """Test positive default_ticks_limit loads correctly."""
+        config = SimulationConfig(default_ticks_limit=10)
+        assert config.default_ticks_limit == 10
+
+    def test_default_ticks_limit_default_value(self) -> None:
+        """Test default_ticks_limit defaults to 0."""
+        config = SimulationConfig()
+        assert config.default_ticks_limit == 0
+
+    def test_default_mode_invalid(self) -> None:
+        """Test invalid default_mode raises ValidationError."""
+        with pytest.raises(ValidationError):
+            SimulationConfig(default_mode="invalid")  # type: ignore[arg-type]
+
+    def test_default_interval_invalid(self) -> None:
+        """Test default_interval < 1 raises ValidationError."""
+        with pytest.raises(ValidationError):
+            SimulationConfig(default_interval=0)
+
+    def test_default_ticks_limit_negative_invalid(self) -> None:
+        """Test default_ticks_limit < 0 raises ValidationError."""
+        with pytest.raises(ValidationError):
+            SimulationConfig(default_ticks_limit=-1)
 
 
 class TestPhaseConfig:
@@ -215,6 +276,59 @@ class TestConfigLoad:
         config = Config.load(config_path=config_toml, project_root=tmp_path)
 
         assert config.simulation.memory_cells == 5  # Default value
+
+    def test_load_default_mode_invalid(self, tmp_path: Path) -> None:
+        """Raises ConfigError when default_mode is invalid."""
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(
+            make_minimal_config_toml(simulation='default_mode = "invalid"'),
+            encoding="utf-8",
+        )
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\nname = 'test'\n", encoding="utf-8")
+
+        with pytest.raises(ConfigError) as exc_info:
+            Config.load(config_path=config_toml, project_root=tmp_path)
+
+        error_msg = str(exc_info.value).lower()
+        assert "default_mode" in error_msg or "simulation" in error_msg
+
+    def test_load_default_interval_invalid(self, tmp_path: Path) -> None:
+        """Raises ConfigError when default_interval < 1."""
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(
+            make_minimal_config_toml(simulation="default_interval = 0"),
+            encoding="utf-8",
+        )
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\nname = 'test'\n", encoding="utf-8")
+
+        with pytest.raises(ConfigError) as exc_info:
+            Config.load(config_path=config_toml, project_root=tmp_path)
+
+        error_msg = str(exc_info.value).lower()
+        assert "default_interval" in error_msg or "simulation" in error_msg
+
+    def test_load_new_simulation_fields(self, tmp_path: Path) -> None:
+        """New simulation fields are loaded correctly from config.toml."""
+        config_toml = tmp_path / "config.toml"
+        simulation_config = (
+            'default_mode = "continuous"\n'
+            "default_interval = 300\n"
+            "default_ticks_limit = 10"
+        )
+        config_toml.write_text(
+            make_minimal_config_toml(simulation=simulation_config),
+            encoding="utf-8",
+        )
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\nname = 'test'\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        assert config.simulation.default_mode == "continuous"
+        assert config.simulation.default_interval == 300
+        assert config.simulation.default_ticks_limit == 10
 
 
 class TestPhaseConfigLoading:

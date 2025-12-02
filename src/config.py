@@ -58,6 +58,9 @@ class SimulationConfig(BaseModel):
     """
 
     memory_cells: int = Field(ge=1, le=10, default=5)
+    default_mode: Literal["single", "continuous"] = "single"
+    default_interval: int = Field(ge=1, default=600)  # seconds
+    default_ticks_limit: int = Field(ge=0, default=0)  # 0 = unlimited
 
 
 class PhaseConfig(BaseModel):

@@ -1,5 +1,8 @@
 [simulation]
 memory_cells = 5
+default_mode = "single"
+default_interval = 600
+default_ticks_limit = 0
 
 [phase1]
 model = "gpt-5-mini-2025-08-07"
