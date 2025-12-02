@@ -279,7 +279,7 @@ response = await adapter.execute(
 
 Провайдер-агностичный клиент: batch execution, chains, usage accumulation.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (разделы 3, 5, 7, 8)
@@ -328,7 +328,7 @@ results = await client.create_batch(requests)
 - Отчёт: `docs/tasks/TS-A.5c-LLM-001_REPORT.md`
 - Спецификация: `docs/specs/util_llm.md`
 - Модуль: `src/utils/llm.py`
-- Тесты: `tests/unit/test_llm.py`
+- Тесты: `tests/unit/test_llm.py`, `tests/integration/test_llm_integration.py`
 
 ---
 

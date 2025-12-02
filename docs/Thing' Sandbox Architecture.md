@@ -24,7 +24,13 @@ thing'-sandbox/
 │   ├── prompts/              # дефолтные промпты
 │   ├── utils/                # переиспользуемые компоненты
 │   │   ├── __init__.py
-│   │   ├── llm.py            # LLM Client
+│   │   ├── exit_codes.py     # коды завершения
+│   │   ├── llm.py            # LLM Client (фасад для фаз)
+│   │   ├── llm_errors.py     # иерархия ошибок LLM
+│   │   ├── llm_adapters/     # транспортный слой (MVP: только OpenAI)
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py       # общие типы (AdapterResponse, ResponseUsage)
+│   │   │   └── openai.py     # OpenAI Responses API adapter
 │   │   └── storage.py        # чтение/запись симуляций
 │   ├── __init__.py
 │   ├── cli.py                # точка входа (typer)
@@ -100,6 +106,37 @@ simulations/
 
 - Нарративы сохраняются в `logs/` по тактам
 - Формат: `tick_NNNNNN.md` (6 цифр, с ведущими нулями)
+
+### Служебные данные LLM (`_openai`)
+
+Entities (персонажи, локации) и `simulation.json` содержат namespace `_openai` для хранения:
+- **Response chains** — цепочки `response_id` для контекста между тактами
+- **Usage statistics** — накопленная статистика токенов
+
+Пример в `characters/bob.json`:
+```json
+{
+  "identity": {...},
+  "state": {...},
+  "memory": {...},
+  "_openai": {
+    "intention_chain": ["resp_abc123", "resp_def456"],
+    "memory_chain": ["resp_xyz789"],
+    "usage": {
+      "total_input_tokens": 125000,
+      "total_output_tokens": 8500,
+      "total_requests": 42
+    }
+  }
+}
+```
+
+**Важно для реализации фаз:** при вызове `LLMClient` с `entity_key` (например, `"intention:bob"`), клиент автоматически:
+1. Извлекает `previous_response_id` из соответствующей chain
+2. После успешного ответа добавляет новый `response_id` в chain
+3. Накапливает usage статистику
+
+Подробности: [LLM Approach v2 → Хранение состояния](Thing'%20Sandbox%20LLM%20Approach%20v2.md#8-хранение-состояния)
 
 ---
 
@@ -215,14 +252,17 @@ simulation-name/
 | Компонент | Файл | Ответственность |
 |-----------|------|-----------------|
 | CLI | `cli.py` | Точка входа, парсит аргументы, вызывает Runner |
-| Config | `config.py` | Загрузка конфигурации, дефолты, резолв промптов |
+| Config | `config.py` | Загрузка конфигурации, PhaseConfig, резолв промптов |
 | Runner | `runner.py` | Оркестрация такта, вызывает фазы 1→2a→2b→3→4, атомарность |
 | Phase 1 | `phase1.py` | Формирование намерений персонажей |
 | Phase 2a | `phase2a.py` | Разрешение сцены арбитром |
 | Phase 2b | `phase2b.py` | Генерация нарратива |
 | Phase 3 | `phase3.py` | Применение результатов (без LLM) |
 | Phase 4 | `phase4.py` | Обновление памяти персонажей |
-| LLM Client | `utils/llm.py` | Единый интерфейс для LLM-вызовов |
+| LLM Client | `utils/llm.py` | Провайдер-агностичный фасад, batch execution, chains |
+| LLM Errors | `utils/llm_errors.py` | Иерархия ошибок LLM |
+| LLM Adapter Base | `utils/llm_adapters/base.py` | Общие типы: AdapterResponse, ResponseUsage |
+| OpenAI Adapter | `utils/llm_adapters/openai.py` | Транспорт для OpenAI Responses API (MVP адаптер, другие — позже) |
 | Storage | `utils/storage.py` | Чтение/запись симуляции |
 | Exit Codes | `utils/exit_codes.py` | Стандартные коды завершения |
 | Narrators | `narrators.py` | Вывод: console, file, telegram, web |
@@ -235,33 +275,11 @@ simulation-name/
 | **Core** | `cli.py`, `config.py`, `runner.py`, `narrators.py` | Стандартная структура |
 | **Utils** | `utils/*.py` | Стандартная структура |
 
-### Именование спецификаций
+### Спецификации модулей
 
-Спецификации хранятся в `docs/specs/`. Префикс отражает тип модуля:
+Спецификации хранятся в `docs/specs/`, именование по типу модуля (phase_, core_, util_).
 
-| Тип | Префикс спеки | Пример |
-|------|----------------|--------|
-| Phase | `phase_` | `phase_1.py` → `phase_1.md` |
-| Core | `core_` | `runner.py` → `core_runner.md` |
-| Utils | `util_` | `utils/llm.py` → `util_llm.md` |
-
-```
-docs/specs/
-  phase_1.md
-  phase_2a.md
-  phase_2b.md
-  phase_3.md
-  phase_4.md
-  core_cli.md
-  core_config.md
-  core_runner.md
-  core_narrators.md
-  util_llm.md
-  util_storage.md
-  util_exit_codes.md
-```
-
-Гайд по написанию спецификаций: [Thing' Sandbox Specs Writing Guide.md](Thing' Sandbox Specs Writing Guide.md)
+Гайд по написанию спецификаций: [Thing' Sandbox Specs Writing Guide.md](Thing'%20Sandbox%20Specs%20Writing%20Guide.md)
 
 ---
 
@@ -305,11 +323,15 @@ docs/specs/
 
 Глобальная конфигурация в корне проекта. Загружается через `src/config.py` (Pydantic Settings).
 
-Структура конфига развивается вместе с проектом. Секции добавляются по мере реализации модулей:
+Секции конфига:
+- `[simulation]` — дефолтные параметры симуляций (memory_cells и др.)
+- `[phase1]`, `[phase2a]`, `[phase2b]`, `[phase4]` — параметры LLM для каждой фазы
 
-- `[llm]` — параметры LLM Client (A.5)
-- `[simulation]` — дефолтные параметры симуляций
-- и другие по мере необходимости
+### PhaseConfig
+
+Каждая фаза с LLM имеет свою секцию конфига. Параметры включают: model, timeout, max_retries, reasoning_effort, response_chain_depth и др.
+
+Подробности: [LLM Approach v2 → Конфигурация](Thing'%20Sandbox%20LLM%20Approach%20v2.md#11-конфигурация)
 
 ### Резолв промптов
 
@@ -384,7 +406,7 @@ Config предоставляет функцию резолва промптов
 | Тип | Формат | Где |
 |-----|--------|-----|
 | Секреты | .env | OPENAI_API_KEY, TELEGRAM_TOKEN |
-| Параметры приложения | config.toml или Pydantic Settings | src/config.py |
+| Параметры приложения | config.toml | src/config.py (Pydantic Settings) |
 | Параметры симуляции | simulation.json | simulations/{id}/simulation.json |
 
 ### Интерфейсы вывода (Narrators)
@@ -401,4 +423,5 @@ Config предоставляет функцию резолва промптов
 ## Примечания
 
 - Документ обновляется по мере развития проекта
-- Спецификации модулей — в `docs/specs/`
+- Детали работы с LLM: [Thing' Sandbox LLM Approach v2.md](Thing'%20Sandbox%20LLM%20Approach%20v2.md)
+- Спецификации модулей: `docs/specs/`
