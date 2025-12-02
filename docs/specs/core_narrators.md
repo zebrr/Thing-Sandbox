@@ -1,6 +1,6 @@
 # core_narrators.md
 
-## Status: NOT_STARTED
+## Status: READY
 
 Output handlers for Thing' Sandbox. Narrators receive tick results and deliver
 narratives to various destinations: console, files, Telegram, web.
@@ -74,8 +74,8 @@ Wind rustles through the ancient oaks. A distant wolf howls.
 - Footer matches header
 
 **Empty narratives:**
-- Location with empty narrative — skipped (not printed)
-- All narratives empty — prints header/footer only
+- Location with empty narrative — shown with `[No narrative]` marker
+- All locations are always printed
 
 ### FileNarrator (Future - B.5)
 
@@ -130,7 +130,7 @@ TelegramNarrator network failures:
 
 ## Dependencies
 
-- **Standard Library**: logging, typing (Protocol)
+- **Standard Library**: logging, sys, typing (Protocol)
 - **External**: None
 - **Internal**: runner (TickResult)
 
@@ -151,6 +151,10 @@ result = TickResult(
     narratives={
         "tavern": "Bob enters the tavern.",
         "forest": "Wind rustles the trees.",
+    },
+    location_names={
+        "tavern": "The Rusty Tankard",
+        "forest": "Dark Forest",
     },
     success=True,
 )
@@ -176,7 +180,7 @@ for narrator in narrators:
 
 ```python
 class TickRunner:
-    def __init__(self, config, storage, narrators: list[Narrator]):
+    def __init__(self, config, narrators: Sequence[Narrator]):
         self._narrators = narrators
 
     async def run_tick(self, sim_id: str) -> TickResult:
@@ -235,6 +239,7 @@ ConsoleNarrator uses Unicode box-drawing for visual separation:
 
 ### Encoding
 
-ConsoleNarrator assumes UTF-8 stdout. If encoding fails:
-- Log warning
-- Skip problematic characters or use ASCII fallback
+ConsoleNarrator handles encoding issues for cross-platform compatibility:
+- Attempts to reconfigure stdout for UTF-8 on Windows
+- Uses `errors="replace"` fallback for unencodable characters
+- Catches and logs encoding errors without failing

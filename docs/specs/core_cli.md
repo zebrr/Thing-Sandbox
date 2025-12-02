@@ -1,6 +1,6 @@
 # core_cli.md
 
-## Status: NOT_STARTED
+## Status: READY
 
 Command-line interface for Thing' Sandbox. Entry point for running simulations
 and checking their status.

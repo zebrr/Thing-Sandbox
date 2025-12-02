@@ -1,6 +1,6 @@
 # core_runner.md
 
-## Status: NOT_STARTED
+## Status: READY
 
 Tick orchestrator for Thing' Sandbox. Executes one complete tick of simulation:
 loads state, runs all phases sequentially, saves results atomically.
@@ -19,6 +19,7 @@ class TickResult:
     sim_id: str
     tick_number: int              # completed tick number
     narratives: dict[str, str]    # location_id → narrative text
+    location_names: dict[str, str]  # location_id → display name
     success: bool
     error: str | None = None
 ```
@@ -27,18 +28,18 @@ class TickResult:
 
 Main orchestrator class.
 
-#### TickRunner.__init__(config: Config, storage: Storage, narrators: list[Narrator]) -> None
+#### TickRunner.__init__(config: Config, narrators: Sequence[Narrator]) -> None
 
 Initialize tick runner.
 
 - **Input**:
   - config — application configuration
-  - storage — simulation storage interface
-  - narrators — list of output handlers
+  - narrators — sequence of output handlers
 - **Attributes**:
   - _config — stored config reference
-  - _storage — stored storage reference
-  - _narrators — stored narrators list
+  - _narrators — stored narrators sequence
+
+Note: Uses `load_simulation()` and `save_simulation()` functions directly from `utils.storage`.
 
 #### TickRunner.run_tick(sim_id: str) -> TickResult
 
@@ -63,7 +64,7 @@ Execute one complete tick of simulation.
 ### Sequence
 
 ```
-1. Load simulation via Storage
+1. Load simulation via load_simulation()
 2. Validate status == "paused"
 3. Set status = "running" (in memory only)
 4. Execute phases:
@@ -75,7 +76,7 @@ Execute one complete tick of simulation.
 5. Collect narratives into TickResult
 6. Increment current_tick
 7. Set status = "paused"
-8. Save simulation atomically via Storage
+8. Save simulation atomically via save_simulation()
 9. Call each narrator with TickResult
 10. Return TickResult
 ```
@@ -154,11 +155,11 @@ Runner does NOT catch phase exceptions. Exceptions propagate to CLI which:
 
 - **Standard Library**: asyncio, dataclasses, logging
 - **External**: None
-- **Internal**: 
+- **Internal**:
   - config (Config)
-  - utils.storage (Storage, Simulation)
+  - utils.storage (load_simulation, save_simulation, Simulation)
   - narrators (Narrator protocol)
-  - phase1, phase2a, phase2b, phase3, phase4
+  - phases (execute_phase1, execute_phase2a, execute_phase2b, execute_phase3, execute_phase4)
 
 ---
 
@@ -168,15 +169,13 @@ Runner does NOT catch phase exceptions. Exceptions propagate to CLI which:
 
 ```python
 from src.config import Config
-from src.utils.storage import Storage
 from src.narrators import ConsoleNarrator
 from src.runner import TickRunner
 
 config = Config.load()
-storage = Storage(config)
 narrators = [ConsoleNarrator()]
 
-runner = TickRunner(config, storage, narrators)
+runner = TickRunner(config, narrators)
 result = await runner.run_tick("my-sim")
 
 print(f"Completed tick {result.tick_number}")
