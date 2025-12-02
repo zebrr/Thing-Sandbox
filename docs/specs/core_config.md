@@ -1,6 +1,6 @@
 # core_config.md
 
-## Status: READY
+## Status: IN_PROGRESS
 
 Configuration loader for Thing' Sandbox. Loads application settings from `config.toml` 
 and secrets from `.env`, provides prompt resolution with simulation-specific overrides.
@@ -46,6 +46,9 @@ Resolves prompt file path with simulation override support.
 Simulation-related settings.
 
 - **memory_cells** (int, 1-10, default=5) — number of memory cells per character
+- **default_mode** ("single" | "continuous", default="single") — default run mode
+- **default_interval** (int, ≥1, default=600) — seconds between ticks in continuous mode
+- **default_ticks_limit** (int, ≥0, default=0) — max ticks to run, 0 = unlimited
 
 #### Config.phase1: PhaseConfig
 
@@ -80,7 +83,16 @@ Telegram bot token from `.env`. None if not set.
 ```python
 class SimulationConfig(BaseModel):
     memory_cells: int = Field(ge=1, le=10, default=5)
+    default_mode: Literal["single", "continuous"] = "single"
+    default_interval: int = Field(ge=1, default=600)  # seconds
+    default_ticks_limit: int = Field(ge=0, default=0)  # 0 = unlimited
 ```
+
+**Field semantics:**
+- `memory_cells` — number of FIFO memory cells per character
+- `default_mode` — default run mode ("single" = one tick, "continuous" = loop with interval)
+- `default_interval` — seconds between ticks in continuous mode
+- `default_ticks_limit` — maximum ticks to run (0 = unlimited)
 
 ### PhaseConfig
 
@@ -129,6 +141,9 @@ Located in project root. Required.
 ```toml
 [simulation]
 memory_cells = 5
+default_mode = "single"
+default_interval = 600
+default_ticks_limit = 0
 
 [phase1]
 model = "gpt-5-mini-2025-08-07"
@@ -312,6 +327,16 @@ except PromptNotFoundError as e:
 - test_phase_config_invalid_timeout — timeout < 1 raises ConfigError
 - test_phase_config_optional_none — commented fields result in None
 - test_phase_config_all_phases_present — phase1, phase2a, phase2b, phase4 all accessible
+
+### New Tests (for B.0a)
+
+- test_simulation_config_default_mode_single — default_mode="single" loads correctly
+- test_simulation_config_default_mode_continuous — default_mode="continuous" loads correctly
+- test_simulation_config_default_mode_invalid — invalid mode raises ConfigError
+- test_simulation_config_default_interval_valid — interval ≥1 loads correctly
+- test_simulation_config_default_interval_invalid — interval < 1 raises ConfigError
+- test_simulation_config_default_ticks_limit_zero — 0 means unlimited
+- test_simulation_config_default_ticks_limit_positive — positive limit loads correctly
 
 ---
 

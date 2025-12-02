@@ -1,4 +1,4 @@
-# Thing' Sandbox: План разработки v1.1
+# Thing' Sandbox: План разработки v1.2
 
 ## Обзор
 
@@ -334,52 +334,121 @@ results = await client.create_batch(requests)
 
 ## Часть B: Vertical Slices
 
-### B.0: Собрать скелет системы (Runner + CLI + стабы фаз)
+### B.0a: Спецификации ядра + SimulationConfig
 
-Оркестрация такта, CLI-точка входа, заглушки фаз с хардкодом.
+Дизайн ключевых модулей перед реализацией.
 
 **STATUS: не готов**
 
 **Входные требования:**
 - Часть A полностью готова
+- Архитектура проекта (`docs/Thing' Sandbox Architecture.md`)
 
 **Задачи:**
-- **Обновление конфигурации:**
-  - Обновить `config.toml` — добавить секцию `[simulation]` (memory_cells и другие дефолты тактов)
-  - Обновить `src/config.py` — добавить `SimulationConfig` Pydantic модель
-  - Обновить `tests/unit/test_config.py` — покрыть новые параметры
-- Написать спецификации:
-  - `docs/specs/core_runner.md`
-  - `docs/specs/core_cli.md`
-  - `docs/specs/core_narrators.md`
-- Реализовать `src/runner.py`:
-  - Оркестрация такта: загрузка → фазы 1-4 → сохранение
-  - Атомарность: всё или ничего
+- Написать спецификацию `docs/specs/core_runner.md`:
+  - Оркестрация такта: load → phase1 → 2a → 2b → 3 → 4 → save
+  - Атомарность (всё или ничего)
   - Вызов Narrators после такта
-- Реализовать `src/cli.py`:
+  - Обработка ошибок фаз
+- Написать спецификацию `docs/specs/core_cli.md`:
   - Команда `run <sim-id>` — запуск одного такта
-  - Команда `status <sim-id>` — статус симуляции (stub)
-- Реализовать `src/narrators.py`:
-  - `ConsoleNarrator` — вывод в консоль
-- Создать стабы фаз (`src/phase1.py`, `src/phase2a.py`, `src/phase2b.py`, `src/phase3.py`, `src/phase4.py`):
-  - Возвращают захардкоженные данные
-- Создать тестовую симуляцию `simulations/test-sim/`
+  - Команда `status <sim-id>` — статус симуляции
+  - Exit codes
+- Написать спецификацию `docs/specs/core_narrators.md`:
+  - Интерфейс Narrator
+  - `ConsoleNarrator` — вывод в stdout
+- Обновить `docs/specs/core_config.md`:
+  - Добавить `SimulationConfig` модель
+- Обновить `src/config.py`:
+  - Добавить `SimulationConfig` Pydantic модель
+  - Загрузка секции `[simulation]`
+- Обновить `tests/unit/test_config.py`:
+  - Тесты для `SimulationConfig`
+
+**Ожидаемый результат:**
+- Спецификации готовы к реализации
+- `SimulationConfig` загружается из `config.toml`
+
+**Артефакты:**
+- Задание: `docs/tasks/TS-B.0a-SPECS-001.md`
+- Отчёт: `docs/tasks/TS-B.0a-SPECS-001_REPORT.md`
+- Спецификации: `docs/specs/core_runner.md`, `docs/specs/core_cli.md`, `docs/specs/core_narrators.md`
+- Обновлённые: `docs/specs/core_config.md`, `src/config.py`, `tests/unit/test_config.py`
+
+---
+
+### B.0b: Стабы фаз + demo-sim
+
+Заглушки фаз с хардкодом и тестовая симуляция.
+
+**STATUS: не готов**
+
+**Входные требования:**
+- B.0a готов
+
+**Задачи:**
+- Создать стабы фаз (возвращают хардкоженные данные):
+  - `src/phase1.py` — фиксированные IntentionResponse
+  - `src/phase2a.py` — фиксированный Master response
+  - `src/phase2b.py` — фиксированный NarrativeResponse
+  - `src/phase3.py` — применение результатов (логика без LLM)
+  - `src/phase4.py` — FIFO-сдвиг памяти (логика без LLM)
+- Создать `simulations/demo-sim/`:
+  - `simulation.json` — current_tick: 0, status: "paused"
+  - `characters/` — 2-3 персонажа
+  - `locations/` — 1-2 локации
+  - `logs/` — пустая папка
+
+**Ожидаемый результат:**
+- Стабы импортируются без ошибок
+- demo-sim проходит валидацию Storage
+
+**Артефакты:**
+- Задание: `docs/tasks/TS-B.0b-STUBS-001.md`
+- Отчёт: `docs/tasks/TS-B.0b-STUBS-001_REPORT.md`
+- Стабы: `src/phase1.py`, `src/phase2a.py`, `src/phase2b.py`, `src/phase3.py`, `src/phase4.py`
+- Данные: `simulations/demo-sim/`
+
+---
+
+### B.0c: Runner + CLI + Narrators
+
+Сборка скелета в работающий механизм.
+
+**STATUS: не готов**
+
+**Входные требования:**
+- B.0b готов
+
+**Задачи:**
+- Реализовать `src/runner.py` по спецификации:
+  - Загрузка симуляции через Storage
+  - Последовательный вызов фаз 1 → 2a → 2b → 3 → 4
+  - Атомарное сохранение в конце
+  - Вызов Narrators
+- Реализовать `src/cli.py` по спецификации:
+  - Typer-приложение
+  - Команда `run <sim-id>`
+  - Команда `status <sim-id>`
+- Реализовать `src/narrators.py` по спецификации:
+  - Базовый протокол Narrator
+  - `ConsoleNarrator`
+- Написать `tests/integration/test_skeleton.py`:
+  - Запуск такта на demo-sim
+  - Проверка инкремента current_tick
 
 **Ожидаемый результат:**
 ```bash
-python -m src.cli run test-sim
-# Выводит фейковый нарратив в консоль
-# simulation.json обновляется (current_tick: 0 → 1)
+python -m src.cli run demo-sim
+# Выводит хардкоженный нарратив в консоль
+# simulation.json: current_tick 0 → 1
 ```
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-B.0-SKELETON-001.md`
-- Отчёт: `docs/tasks/TS-B.0-SKELETON-001_REPORT.md`
-- Спецификации: `docs/specs/core_runner.md`, `docs/specs/core_cli.md`, `docs/specs/core_narrators.md`
+- Задание: `docs/tasks/TS-B.0c-RUNNER-001.md`
+- Отчёт: `docs/tasks/TS-B.0c-RUNNER-001_REPORT.md`
 - Модули: `src/runner.py`, `src/cli.py`, `src/narrators.py`
-- Стабы: `src/phase1.py`, `src/phase2a.py`, `src/phase2b.py`, `src/phase3.py`, `src/phase4.py`
-- Тестовые данные: `simulations/test-sim/`
-- Тесты: `tests/integration/test_skeleton.py`
+- Тест: `tests/integration/test_skeleton.py`
 
 ---
 
@@ -394,7 +463,7 @@ python -m src.cli run test-sim
 - Схема ответа: `src/schemas/IntentionResponse.schema.json`
 
 **Входные требования:**
-- B.0 готов
+- B.0c готов
 - Концепция проекта изучена
 
 **Задачи:**
