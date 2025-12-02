@@ -1,6 +1,6 @@
 # util_llm.md
 
-## Status: DRAFT
+## Status: READY
 
 Provider-agnostic LLM client facade. Handles batch execution, response chains, 
 and usage accumulation. Phases work only with this interface.
