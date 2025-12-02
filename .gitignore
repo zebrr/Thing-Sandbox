@@ -25,7 +25,8 @@ venv/
 .env.*.local
 
 # Project specific
-simulations/
+simulations/*
+!simulations/demo-sim/
 
 # Testing
 .coverage

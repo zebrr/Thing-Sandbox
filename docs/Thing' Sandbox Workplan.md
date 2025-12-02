@@ -381,7 +381,7 @@ results = await client.create_batch(requests)
 
 Заглушки фаз с хардкодом и тестовая симуляция.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Входные требования:**
 - B.0a готов
