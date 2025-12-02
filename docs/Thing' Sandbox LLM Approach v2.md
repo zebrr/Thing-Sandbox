@@ -80,8 +80,24 @@ T = TypeVar("T", bound=BaseModel)
 class LLMClient:
     """
     Провайдер-агностичный фасад для LLM запросов.
-    Фазы работают только с этим интерфейсом.
+    Создаётся per-phase с соответствующим adapter и entities.
     """
+    
+    def __init__(
+        self,
+        adapter: OpenAIAdapter,
+        entities: list[dict],
+        default_depth: int = 0,
+    ):
+        """
+        Args:
+            adapter: Адаптер для LLM провайдера (OpenAI, etc.)
+            entities: Список персонажей или локаций (мутируются in-place)
+            default_depth: Глубина chain по умолчанию (из PhaseConfig)
+        """
+        self.adapter = adapter
+        self.chain_manager = ResponseChainManager(entities)
+        self.default_depth = default_depth
     
     async def create_response(
         self,
@@ -141,6 +157,7 @@ class LLMRequest:
     input_data: str
     schema: type[BaseModel]
     entity_key: str | None = None
+    depth_override: int | None = None  # Override default chain depth for this request
 ```
 
 **Что НЕ протекает наружу:**
@@ -386,9 +403,10 @@ async def _execute_one(self, request: LLMRequest) -> AdapterResponse:
         previous_response_id=previous_id
     )
     
-    # Auto-confirm: добавить в chain
+    # Auto-confirm: добавить в chain с нужным depth
     if request.entity_key:
-        evicted = self.chain_manager.confirm(request.entity_key, response.response_id)
+        depth = request.depth_override if request.depth_override is not None else self.default_depth
+        evicted = self.chain_manager.confirm(request.entity_key, response.response_id, depth)
         if evicted:
             # Ошибка deletion не критична — на след. такте удалится
             await self.adapter.delete_response(evicted)
@@ -401,7 +419,8 @@ async def _execute_one(self, request: LLMRequest) -> AdapterResponse:
 
 def _accumulate_usage(self, entity_key: str, usage: ResponseUsage) -> None:
     """Накопить usage статистику в entity."""
-    entity = self.chain_manager.entities.get(entity_key)
+    entity_id, _ = self.chain_manager._parse_key(entity_key)
+    entity = self.chain_manager.entities.get(entity_id)
     if not entity:
         return
     
@@ -454,48 +473,74 @@ if self.rate_limit_hits > 0:
 
 ## 7. Response Chains
 
-**ChainManager** — управление цепочками per entity.
+**ChainManager** — stateless helper для работы с chains в entities. Depth передаётся при `confirm()`, что позволяет разный depth для разных фаз и даже разных entities.
 
 ```python
 class ResponseChainManager:
     """
-    Хранит response chains для каждой сущности.
-    Позволяет модели "помнить" предыдущие ответы.
+    Stateless helper для работы с response chains в entities.
+    
+    Позволяет модели "помнить" предыдущие ответы через OpenAI
+    previous_response_id. Depth передаётся при confirm() —
+    это позволяет разный depth для разных фаз и даже разных entities.
     
     Работает с entities in-place: при confirm() мутирует
-    entity._openai напрямую. Storage сохраняет в конце такта.
+    entity["_openai"] напрямую. Storage сохраняет в конце такта.
     """
     
-    def __init__(self, entities: list, depth: int = 0):
+    def __init__(self, entities: list[dict]):
         """
         Args:
-            entities: Список персонажей и локаций (мутируются in-place)
-            depth: Глубина chain (0 = независимые запросы)
+            entities: Список персонажей или локаций (мутируются in-place).
+                     Каждый entity должен иметь identity.id.
         """
-        self.depth = depth
-        self.entities = {self._entity_key(e): e for e in entities}
+        self.entities: dict[str, dict] = {}
+        for entity in entities:
+            entity_id = entity.get("identity", {}).get("id", "")
+            if entity_id:
+                self.entities[entity_id] = entity
     
     def get_previous(self, entity_key: str) -> str | None:
-        """Получить последний confirmed response_id для entity."""
-        if self.depth == 0:
-            return None
-        entity = self.entities.get(entity_key)
+        """
+        Получить последний response_id из chain для entity.
+        
+        Args:
+            entity_key: Ключ вида "intention:bob", "memory:elvira"
+        
+        Returns:
+            response_id или None если chain пуст
+        """
+        entity_id, chain_name = self._parse_key(entity_key)
+        entity = self.entities.get(entity_id)
         if not entity:
             return None
-        chain = entity.get("_openai", {}).get(self._chain_key(entity_key), [])
+        
+        chain_key = f"{chain_name}_chain"
+        chain = entity.get("_openai", {}).get(chain_key, [])
         return chain[-1] if chain else None
     
-    def confirm(self, entity_key: str, response_id: str) -> str | None:
+    def confirm(
+        self,
+        entity_key: str,
+        response_id: str,
+        depth: int,
+    ) -> str | None:
         """
         Добавить response в chain (мутирует entity in-place).
+        
+        Args:
+            entity_key: Ключ вида "intention:bob", "memory:elvira"
+            response_id: ID ответа от OpenAI
+            depth: Глубина chain (0 = не добавлять, >0 = sliding window)
         
         Returns:
             Вытесненный response_id (для удаления) или None
         """
-        if self.depth == 0:
+        if depth == 0:
             return None
         
-        entity = self.entities.get(entity_key)
+        entity_id, chain_name = self._parse_key(entity_key)
+        entity = self.entities.get(entity_id)
         if not entity:
             return None
         
@@ -503,21 +548,32 @@ class ResponseChainManager:
         if "_openai" not in entity:
             entity["_openai"] = {}
         
-        chain_key = self._chain_key(entity_key)
+        chain_key = f"{chain_name}_chain"
         if chain_key not in entity["_openai"]:
             entity["_openai"][chain_key] = []
         
         chain = entity["_openai"][chain_key]
         
+        # Sliding window: вытесняем старые если превышен depth
         evicted = None
-        if len(chain) >= self.depth:
+        if len(chain) >= depth:
             evicted = chain.pop(0)
         
         chain.append(response_id)
         return evicted
+    
+    def _parse_key(self, entity_key: str) -> tuple[str, str]:
+        """
+        Парсинг entity_key в (entity_id, chain_name).
+        
+        "intention:bob" → ("bob", "intention")
+        "memory:elvira" → ("elvira", "memory")
+        """
+        chain_name, entity_id = entity_key.split(":", 1)
+        return entity_id, chain_name
 ```
 
-**Auto-confirm:** если `adapter.execute()` вернул результат без exception — chain обновляется автоматически. При refusal, incomplete — chain не трогаем.
+**Auto-confirm:** если `adapter.execute()` вернул результат без exception — chain обновляется автоматически с depth из request или default. При refusal, incomplete — chain не трогаем.
 
 ---
 
