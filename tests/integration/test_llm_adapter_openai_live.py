@@ -45,10 +45,9 @@ class MathReasoning(BaseModel):
 @pytest.fixture
 def integration_config():
     """Configuration for integration tests - uses phase1 from config."""
-    if not os.environ.get("OPENAI_API_KEY"):
-        pytest.skip("OPENAI_API_KEY not set")
-
     config = Config.load()
+    if not config.openai_api_key:
+        pytest.skip("OPENAI_API_KEY not set in .env")
     return config.phase1
 
 

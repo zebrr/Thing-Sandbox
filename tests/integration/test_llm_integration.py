@@ -30,9 +30,10 @@ class SimpleAnswer(BaseModel):
 @pytest.fixture
 def config() -> Config:
     """Load config, skip if no API key."""
-    if not os.environ.get("OPENAI_API_KEY"):
-        pytest.skip("OPENAI_API_KEY not set")
-    return Config.load()
+    cfg = Config.load()
+    if not cfg.openai_api_key:
+        pytest.skip("OPENAI_API_KEY not set in .env")
+    return cfg
 
 
 @pytest.fixture

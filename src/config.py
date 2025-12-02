@@ -17,8 +17,9 @@ import sys
 from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -91,14 +92,8 @@ class PhaseConfig(BaseModel):
 class EnvSettings(BaseSettings):
     """Environment variables loader using pydantic-settings.
 
-    Loads secrets from .env file if present.
+    Reads from os.environ after load_dotenv() populates it.
     """
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
 
     openai_api_key: str | None = None
     telegram_bot_token: str | None = None
@@ -107,6 +102,9 @@ class EnvSettings(BaseSettings):
 def _load_env_settings(env_file_path: Path | None) -> EnvSettings:
     """Load environment settings from specified .env file.
 
+    Uses python-dotenv to load .env into os.environ,
+    then pydantic-settings reads from there.
+
     Args:
         env_file_path: Path to .env file, or None to skip file loading.
 
@@ -114,28 +112,9 @@ def _load_env_settings(env_file_path: Path | None) -> EnvSettings:
         EnvSettings instance with loaded values.
     """
     if env_file_path is not None and env_file_path.exists():
-        # Read .env file manually and pass values
-        env_vars: dict[str, str | None] = {}
-        with open(env_file_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, _, value = line.partition("=")
-                    key = key.strip().lower()
-                    value = value.strip()
-                    if value:
-                        env_vars[key] = value
+        load_dotenv(env_file_path, override=True)
 
-        return EnvSettings(
-            openai_api_key=env_vars.get("openai_api_key"),
-            telegram_bot_token=env_vars.get("telegram_bot_token"),
-        )
-
-    return EnvSettings(
-        openai_api_key=None,
-        telegram_bot_token=None,
-        _env_file=None,  # type: ignore[call-arg]
-    )
+    return EnvSettings()
 
 
 class Config:

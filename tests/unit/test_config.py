@@ -544,8 +544,12 @@ class TestEnvLoading:
         assert config.openai_api_key == "sk-test-ключ-кириллица-123"
         assert config.telegram_bot_token == "bot-токен-456"
 
-    def test_env_missing(self, tmp_path: Path) -> None:
+    def test_env_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Works without .env file, secrets are None."""
+        # Clean up env vars that might be set by previous tests
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+
         config_toml = tmp_path / "config.toml"
         config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
         pyproject = tmp_path / "pyproject.toml"
