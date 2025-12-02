@@ -415,7 +415,7 @@ results = await client.create_batch(requests)
 
 Сборка скелета в работающий механизм.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Входные требования:**
 - B.0b готов

@@ -180,8 +180,12 @@ class TestPhaseConfig:
 class TestConfigLoad:
     """Tests for Config.load() method."""
 
-    def test_load_valid_config(self, tmp_path: Path) -> None:
+    def test_load_valid_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Successfully loads valid config.toml with all phases."""
+        # Isolate from real environment
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+
         config_toml = tmp_path / "config.toml"
         config_toml.write_text(
             make_minimal_config_toml(
