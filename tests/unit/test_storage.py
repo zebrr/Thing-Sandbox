@@ -18,7 +18,9 @@ from src.utils.storage import (
     Simulation,
     SimulationNotFoundError,
     StorageIOError,
+    TemplateNotFoundError,
     load_simulation,
+    reset_simulation,
     save_simulation,
 )
 
@@ -116,9 +118,7 @@ class TestLoadSimulation:
         """Raises InvalidDataError for broken JSON."""
         sim_path = tmp_path / "broken-sim"
         sim_path.mkdir()
-        (sim_path / "simulation.json").write_text(
-            "{invalid json", encoding="utf-8"
-        )
+        (sim_path / "simulation.json").write_text("{invalid json", encoding="utf-8")
 
         with pytest.raises(InvalidDataError) as exc_info:
             load_simulation(sim_path)
@@ -435,3 +435,214 @@ class TestRoundtrip:
         assert sim2.id == "test-sim"
         assert sim2.characters["bob"].identity.name == "Боб"
         assert "tavern" in sim2.locations
+
+
+def create_test_template(tmp_path: Path, sim_id: str = "test-sim") -> Path:
+    """Create a valid test template structure.
+
+    Args:
+        tmp_path: Temporary directory from pytest fixture.
+        sim_id: Simulation identifier.
+
+    Returns:
+        Path to the base directory (containing simulations/_templates/).
+    """
+    base_path = tmp_path / "project"
+    template_path = base_path / "simulations" / "_templates" / sim_id
+    template_path.mkdir(parents=True)
+    (template_path / "characters").mkdir()
+    (template_path / "locations").mkdir()
+    (template_path / "logs").mkdir()
+
+    # simulation.json
+    (template_path / "simulation.json").write_text(
+        json.dumps(
+            {
+                "id": sim_id,
+                "current_tick": 0,
+                "created_at": "2025-01-15T10:00:00Z",
+                "status": "paused",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # character
+    (template_path / "characters" / "héros.json").write_text(
+        json.dumps(
+            {
+                "identity": {
+                    "id": "héros",
+                    "name": "Герой",
+                    "description": "Тестовый персонаж с юникодом",
+                },
+                "state": {"location": "начало"},
+                "memory": {"cells": [], "summary": ""},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # location
+    (template_path / "locations" / "начало.json").write_text(
+        json.dumps(
+            {
+                "identity": {
+                    "id": "начало",
+                    "name": "Начальная локация",
+                    "description": "Место старта",
+                    "connections": [],
+                },
+                "state": {"moment": ""},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # .gitkeep in logs
+    (template_path / "logs" / ".gitkeep").write_text("", encoding="utf-8")
+
+    return base_path
+
+
+class TestResetSimulation:
+    """Tests for reset_simulation function."""
+
+    def test_reset_simulation_success(self, tmp_path: Path) -> None:
+        """Resets simulation to template state."""
+        base_path = create_test_template(tmp_path)
+        sim_id = "test-sim"
+
+        # Create modified working simulation
+        working_path = base_path / "simulations" / sim_id
+        working_path.mkdir(parents=True)
+        (working_path / "characters").mkdir()
+        (working_path / "locations").mkdir()
+        (working_path / "logs").mkdir()
+
+        # Modify simulation.json
+        (working_path / "simulation.json").write_text(
+            json.dumps(
+                {
+                    "id": sim_id,
+                    "current_tick": 42,
+                    "created_at": "2025-01-15T10:00:00Z",
+                    "status": "paused",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # Add log file
+        (working_path / "logs" / "tick_000001.md").write_text(
+            "# Tick 1\nSome narrative", encoding="utf-8"
+        )
+
+        # Reset
+        reset_simulation(sim_id, base_path)
+
+        # Verify reset
+        sim = load_simulation(working_path)
+        assert sim.current_tick == 0
+        assert sim.status == "paused"
+        assert "héros" in sim.characters
+        assert "начало" in sim.locations
+
+        # Verify logs cleared
+        logs_path = working_path / "logs"
+        assert logs_path.exists()
+        log_files = [f for f in logs_path.iterdir() if f.suffix == ".md"]
+        assert len(log_files) == 0
+
+    def test_reset_simulation_creates_target(self, tmp_path: Path) -> None:
+        """Creates target simulation folder if it doesn't exist."""
+        base_path = create_test_template(tmp_path)
+        sim_id = "test-sim"
+
+        # Ensure simulations folder exists but target doesn't
+        (base_path / "simulations").mkdir(exist_ok=True)
+        target_path = base_path / "simulations" / sim_id
+        assert not target_path.exists()
+
+        # Reset (should create target)
+        reset_simulation(sim_id, base_path)
+
+        # Verify target created
+        assert target_path.exists()
+        sim = load_simulation(target_path)
+        assert sim.id == sim_id
+        assert sim.current_tick == 0
+
+    def test_reset_simulation_clears_logs(self, tmp_path: Path) -> None:
+        """Clears logs folder contents after reset."""
+        base_path = create_test_template(tmp_path)
+        sim_id = "test-sim"
+
+        # Create working simulation with logs
+        working_path = base_path / "simulations" / sim_id
+        working_path.mkdir(parents=True)
+        (working_path / "logs").mkdir()
+        (working_path / "logs" / "tick_000001.md").write_text("Log 1")
+        (working_path / "logs" / "tick_000002.md").write_text("Log 2")
+        (working_path / "logs" / "subdir").mkdir()
+        (working_path / "logs" / "subdir" / "nested.txt").write_text("Nested")
+
+        # Copy template simulation.json to make it valid
+        import shutil
+
+        template_path = base_path / "simulations" / "_templates" / sim_id
+        shutil.copy(template_path / "simulation.json", working_path / "simulation.json")
+
+        # Reset
+        reset_simulation(sim_id, base_path)
+
+        # Verify logs cleared
+        logs_path = working_path / "logs"
+        assert logs_path.exists()
+        # Only .gitkeep should remain (copied from template)
+        files = list(logs_path.iterdir())
+        assert len(files) <= 1
+        if files:
+            assert files[0].name == ".gitkeep"
+
+    def test_reset_simulation_template_not_found(self, tmp_path: Path) -> None:
+        """Raises TemplateNotFoundError if template doesn't exist."""
+        base_path = tmp_path / "project"
+        (base_path / "simulations").mkdir(parents=True)
+
+        with pytest.raises(TemplateNotFoundError) as exc_info:
+            reset_simulation("nonexistent", base_path)
+
+        assert exc_info.value.sim_id == "nonexistent"
+        assert "nonexistent" in str(exc_info.value.template_path)
+
+    def test_reset_simulation_creates_logs_if_missing(self, tmp_path: Path) -> None:
+        """Creates logs folder if template doesn't have one."""
+        base_path = tmp_path / "project"
+        sim_id = "no-logs-template"
+        template_path = base_path / "simulations" / "_templates" / sim_id
+        template_path.mkdir(parents=True)
+        (template_path / "characters").mkdir()
+        (template_path / "locations").mkdir()
+        # Note: no logs folder in template
+
+        (template_path / "simulation.json").write_text(
+            json.dumps(
+                {
+                    "id": sim_id,
+                    "current_tick": 0,
+                    "created_at": "2025-01-15T10:00:00Z",
+                    "status": "paused",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # Reset
+        reset_simulation(sim_id, base_path)
+
+        # Verify logs folder created
+        target_path = base_path / "simulations" / sim_id
+        logs_path = target_path / "logs"
+        assert logs_path.exists()
+        assert logs_path.is_dir()

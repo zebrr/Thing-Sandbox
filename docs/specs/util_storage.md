@@ -134,6 +134,25 @@ Saves complete simulation state to disk.
   3. Write `simulation.json` (without characters/locations, just metadata)
 - **Note**: Does not create folder structure. Folder must exist.
 
+#### reset_simulation(sim_id: str, base_path: Path) -> None
+
+Resets simulation to template state.
+
+- **Input**:
+  - sim_id — simulation identifier
+  - base_path — base path containing simulations/ folder
+- **Returns**: None
+- **Raises**:
+  - TemplateNotFoundError — template doesn't exist
+  - StorageIOError — copy operation failed
+- **Behavior**:
+  1. Check template exists at `{base_path}/simulations/_templates/{sim_id}/`
+  2. If not → raise TemplateNotFoundError
+  3. Remove existing target simulation if present
+  4. Copy template to `{base_path}/simulations/{sim_id}/`
+  5. Ensure logs folder exists and is empty
+- **Note**: Creates target folder if it doesn't exist.
+
 ---
 
 ### Exceptions
@@ -177,6 +196,18 @@ class StorageIOError(Exception):
         super().__init__(message)
 ```
 
+#### TemplateNotFoundError
+
+Raised when simulation template doesn't exist.
+
+```python
+class TemplateNotFoundError(Exception):
+    def __init__(self, sim_id: str, template_path: Path):
+        self.sim_id = sim_id
+        self.template_path = template_path
+        super().__init__(f"Template not found for '{sim_id}': {template_path}")
+```
+
 ---
 
 ## Dependencies
@@ -196,6 +227,7 @@ class StorageIOError(Exception):
 | SimulationNotFoundError | EXIT_INPUT_ERROR (2) |
 | InvalidDataError | EXIT_INPUT_ERROR (2) |
 | StorageIOError | EXIT_IO_ERROR (5) |
+| TemplateNotFoundError | EXIT_INPUT_ERROR (2) |
 
 ### Validation Rules
 
@@ -324,6 +356,11 @@ tavern_chars = [
   - test_save_simulation_io_error — raises StorageIOError
   - test_save_simulation_preserves_extra_fields — extra fields not lost
   - test_roundtrip — load → modify → save → load matches
+  - test_reset_simulation_success — resets simulation to template state
+  - test_reset_simulation_creates_target — creates target if doesn't exist
+  - test_reset_simulation_clears_logs — clears logs folder contents
+  - test_reset_simulation_template_not_found — raises TemplateNotFoundError
+  - test_reset_simulation_creates_logs_if_missing — creates logs folder if template lacks one
 
 ---
 

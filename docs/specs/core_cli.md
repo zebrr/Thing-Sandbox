@@ -78,6 +78,37 @@ my-sim: tick 42, 3 characters, 2 locations, status: paused
 - EXIT_SUCCESS (0) — status displayed
 - EXIT_INPUT_ERROR (2) — simulation not found
 
+#### reset
+
+Reset simulation to template state.
+
+```bash
+python -m src.cli reset <sim-id>
+```
+
+**Arguments:**
+- `sim-id` (str, required) — simulation identifier
+
+**Behavior:**
+1. Load configuration
+2. Call reset_simulation(sim_id, project_root)
+3. Output success message or error
+
+**Output Format:**
+```
+[sim-id] Reset to template.
+```
+
+**Error Output:**
+```
+Error: Template for 'sim-id' not found
+```
+
+**Exit Codes:**
+- EXIT_SUCCESS (0) — reset completed
+- EXIT_INPUT_ERROR (2) — template not found
+- EXIT_IO_ERROR (5) — copy operation failed
+
 ---
 
 ## CLI Options Resolution (Future)
@@ -154,6 +185,7 @@ Error: Simulation 'unknown-sim' not found
 | ConfigError | EXIT_CONFIG_ERROR | "Configuration error: {details}" |
 | SimulationNotFoundError | EXIT_INPUT_ERROR | "Simulation '{id}' not found" |
 | ValidationError | EXIT_INPUT_ERROR | "Invalid simulation data: {details}" |
+| TemplateNotFoundError | EXIT_INPUT_ERROR | "Template for '{id}' not found" |
 | PhaseError | EXIT_RUNTIME_ERROR | "Phase {N} failed: {details}" |
 | LLMRateLimitError | EXIT_API_LIMIT_ERROR | "Rate limit exceeded, retry later" |
 | StorageError | EXIT_IO_ERROR | "Failed to save: {details}" |
@@ -223,6 +255,9 @@ done
 - test_run_command_phase_error — exit 3
 - test_status_command_success — correct format output
 - test_status_command_not_found — exit 2
+- test_reset_command_success — reset completes, exit 0
+- test_reset_command_template_not_found — exit 2
+- test_reset_command_storage_error — exit 5
 
 ### Integration Tests
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -64,6 +65,19 @@ class StorageIOError(Exception):
         self.path = path
         self.cause = cause
         super().__init__(message)
+
+
+class TemplateNotFoundError(Exception):
+    """Template for simulation doesn't exist.
+
+    Example:
+        >>> raise TemplateNotFoundError("demo-sim", Path("simulations/_templates/demo-sim"))
+    """
+
+    def __init__(self, sim_id: str, template_path: Path) -> None:
+        self.sim_id = sim_id
+        self.template_path = template_path
+        super().__init__(f"Template not found for '{sim_id}': {template_path}")
 
 
 # =============================================================================
@@ -456,3 +470,59 @@ def _save_entity(file_path: Path, entity: Character | Location) -> None:
     except OSError as e:
         logger.error("Cannot write %s: %s", file_path, e)
         raise StorageIOError(f"Cannot write {file_path}: {e}", file_path, e)
+
+
+def reset_simulation(sim_id: str, base_path: Path) -> None:
+    """Reset simulation to template state.
+
+    Copies template over working simulation, clearing logs.
+    Creates working simulation folder if it doesn't exist.
+
+    Args:
+        sim_id: Simulation identifier.
+        base_path: Base path containing simulations/ folder.
+
+    Raises:
+        TemplateNotFoundError: Template doesn't exist.
+        StorageIOError: Copy operation failed.
+
+    Example:
+        >>> reset_simulation("demo-sim", Path("/project"))
+    """
+    template_path = base_path / "simulations" / "_templates" / sim_id
+    target_path = base_path / "simulations" / sim_id
+
+    # Check template exists
+    if not template_path.exists() or not template_path.is_dir():
+        logger.error("Template not found: %s", template_path)
+        raise TemplateNotFoundError(sim_id, template_path)
+
+    try:
+        # Remove existing target if present
+        if target_path.exists():
+            shutil.rmtree(target_path)
+            logger.debug("Removed existing simulation: %s", target_path)
+
+        # Copy template to target
+        shutil.copytree(template_path, target_path)
+        logger.debug("Copied template to: %s", target_path)
+
+        # Ensure logs folder exists and is empty
+        logs_path = target_path / "logs"
+        if logs_path.exists():
+            # Clear logs folder contents (keep the folder)
+            for item in logs_path.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+            logger.debug("Cleared logs folder: %s", logs_path)
+        else:
+            logs_path.mkdir()
+            logger.debug("Created logs folder: %s", logs_path)
+
+        logger.info("Reset simulation '%s' to template state", sim_id)
+
+    except OSError as e:
+        logger.error("Failed to reset simulation '%s': %s", sim_id, e)
+        raise StorageIOError(f"Failed to reset simulation '{sim_id}': {e}", target_path, e)

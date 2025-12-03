@@ -29,7 +29,9 @@ from src.utils.storage import (
     InvalidDataError,
     SimulationNotFoundError,
     StorageIOError,
+    TemplateNotFoundError,
     load_simulation,
+    reset_simulation,
 )
 
 app = typer.Typer(
@@ -122,6 +124,35 @@ def status(sim_id: str) -> None:
         f"{char_count} characters, {loc_count} locations, "
         f"status: {simulation.status}"
     )
+
+    raise typer.Exit(code=EXIT_SUCCESS)
+
+
+@app.command()
+def reset(sim_id: str) -> None:
+    """Reset simulation to template state.
+
+    Copies template over working simulation, clearing logs.
+    Creates simulation folder if it doesn't exist.
+
+    Args:
+        sim_id: Simulation identifier (folder name in simulations/).
+    """
+    try:
+        config = Config.load()
+    except ConfigError as e:
+        typer.echo(f"Configuration error: {e}", err=True)
+        raise typer.Exit(code=EXIT_CONFIG_ERROR)
+
+    try:
+        reset_simulation(sim_id, config._project_root)
+        typer.echo(f"[{sim_id}] Reset to template.")
+    except TemplateNotFoundError:
+        typer.echo(f"Error: Template for '{sim_id}' not found", err=True)
+        raise typer.Exit(code=EXIT_INPUT_ERROR)
+    except StorageIOError as e:
+        typer.echo(f"Storage error: {e}", err=True)
+        raise typer.Exit(code=EXIT_IO_ERROR)
 
     raise typer.Exit(code=EXIT_SUCCESS)
 
