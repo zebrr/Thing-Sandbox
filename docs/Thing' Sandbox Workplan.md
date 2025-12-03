@@ -460,11 +460,14 @@ python -m src.cli run demo-sim
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox Concept.md`
+- Подход проектирования промптов: `docs/Thing' Sandbox LLM Prompting.md`
 - Схема ответа: `src/schemas/IntentionResponse.schema.json`
+- Схема персонажа: `src/schemas/Character.schema.json`
+- Схема локации: `src/schemas/Location.schema.json`
 
 **Входные требования:**
 - B.0c готов
-- Концепция проекта изучена
+- Все ключевые документы изучены
 
 **Задачи:**
 - Разработать промпт `src/prompts/phase1_intention.md`:
@@ -563,11 +566,16 @@ python -m src.cli run demo-sim
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox Concept.md`
+- Подход проектирования промптов: `docs/Thing' Sandbox LLM Prompting.md`
 - Схема арбитра: `src/schemas/Master.schema.json`
 - Схема нарратива: `src/schemas/NarrativeResponse.schema.json`
+- Схема персонажа: `src/schemas/Character.schema.json`
+- Схема локации: `src/schemas/Location.schema.json`
+- Схема намерения: `src/schemas/IntentionResponse.schema.json`
 
 **Входные требования:**
 - B.2 готов
+- Все ключевые документы изучены
 
 **Задачи:**
 - Разработать промпт `src/prompts/phase2_master.md`:
@@ -641,10 +649,13 @@ python -m src.cli run demo-sim
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox Concept.md`
+- Подход проектирования промптов: `docs/Thing' Sandbox LLM Prompting.md`
 - Схема ответа: `src/schemas/SummaryResponse.schema.json`
+- Схема персонажа: `src/schemas/Character.schema.json` (структура памяти)
 
 **Входные требования:**
 - B.3b готов
+- Все ключевые документы изучены
 
 **Задачи:**
 - Разработать промпт `src/prompts/phase4_summary.md`:
