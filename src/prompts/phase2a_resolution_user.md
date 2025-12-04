@@ -45,4 +45,4 @@ No intentions — empty location.
 
 ## Tick
 
-{{ tick }}
+{{ simulation.current_tick }}

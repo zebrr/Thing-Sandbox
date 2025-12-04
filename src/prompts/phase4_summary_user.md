@@ -16,4 +16,4 @@
 
 ## Tick
 
-{{ tick }}
+{{ simulation.current_tick }}

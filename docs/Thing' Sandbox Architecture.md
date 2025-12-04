@@ -436,6 +436,7 @@ Config предоставляет функцию резолва промптов
 | CLI | typer | Современный CLI с type hints |
 | Валидация/модели | Pydantic v2 | Модели данных, загрузка конфигов |
 | LLM | openai (официальный SDK) | Structured output из коробки |
+| Шаблоны промптов | Jinja2 | Рендеринг промптов с подстановками |
 | Web-сервер | FastAPI | Async, websockets, Pydantic-native |
 | Telegram | python-telegram-bot | Зрелая библиотека (альтернатива: aiogram) |
 
