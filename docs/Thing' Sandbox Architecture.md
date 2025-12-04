@@ -79,7 +79,7 @@ simulations/
       tick_000001.md
       tick_000002.md
     prompts/              # опционально, переопределения
-      phase2_narrative.md
+      phase2b_narrative_system.md
 ```
 
 ### simulation.json
@@ -149,11 +149,17 @@ Entities (персонажи, локации) и `simulation.json` содерж�
 
 ### Файлы промптов
 
+Каждая фаза использует два промпта — system и user:
+
 ```
-phase1_intention.md     # фаза 1 — намерение персонажа
-phase2_master.md        # фаза 2a — разрешение сцены
-phase2_narrative.md     # фаза 2b — генерация нарратива
-phase4_summary.md       # фаза 4 — суммаризация памяти
+phase1_intention_system.md      # фаза 1 — system prompt
+phase1_intention_user.md        # фаза 1 — user prompt
+phase2a_resolution_system.md    # фаза 2a — system prompt
+phase2a_resolution_user.md      # фаза 2a — user prompt
+phase2b_narrative_system.md     # фаза 2b — system prompt
+phase2b_narrative_user.md       # фаза 2b — user prompt
+phase4_summary_system.md        # фаза 4 — system prompt
+phase4_summary_user.md          # фаза 4 — user prompt
 ```
 
 ### Резолв промпта
@@ -177,6 +183,7 @@ simulation-name/
   characters/             # начальные персонажи
   locations/              # начальные локации
   logs/                   # пустая папка
+  prompts/                # промпты симуляции
 ```
 
 ### Начальное состояние памяти
@@ -463,4 +470,5 @@ Config предоставляет функцию резолва промптов
 
 - Документ обновляется по мере развития проекта
 - Детали работы с LLM: [Thing' Sandbox LLM Approach v2.md](Thing'%20Sandbox%20LLM%20Approach%20v2.md)
+- Детали работы промптами: [Thing' Sandbox LLM Prompting.md](Thing'%20Sandbox%20LLM%20Prompting.md)
 - Спецификации модулей: `docs/specs/`
