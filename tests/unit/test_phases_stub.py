@@ -8,6 +8,9 @@ import pytest
 
 from src.config import Config
 from src.phases import (
+    CharacterUpdate,
+    LocationUpdate,
+    MasterOutput,
     execute_phase1,
     execute_phase2a,
     execute_phase2b,
@@ -159,9 +162,10 @@ async def test_phase2a_returns_master_for_all_locations(
     # Should have result for each location
     for loc_id in demo_sim.locations:
         assert loc_id in result.data
-        assert result.data[loc_id]["location_id"] == loc_id
-        assert "characters" in result.data[loc_id]
-        assert "location" in result.data[loc_id]
+        assert isinstance(result.data[loc_id], MasterOutput)
+        assert result.data[loc_id].location_id == loc_id
+        assert isinstance(result.data[loc_id].characters, dict)
+        assert isinstance(result.data[loc_id].location, LocationUpdate)
 
 
 @pytest.mark.asyncio
@@ -181,19 +185,24 @@ async def test_phase2b_returns_narratives_for_all_locations(
 
 
 @pytest.mark.asyncio
-async def test_phase3_succeeds_with_no_op(demo_sim: Simulation, config: Config) -> None:
-    """Phase 3 stub succeeds and returns None data."""
-    result = await execute_phase3(demo_sim, config, None)  # type: ignore[arg-type]
+async def test_phase3_applies_results(demo_sim: Simulation, config: Config) -> None:
+    """Phase 3 applies master_results and returns pending_memories."""
+    # First run phase2a to get master_results
+    result2a = await execute_phase2a(demo_sim, config, None)  # type: ignore[arg-type]
+
+    result = await execute_phase3(demo_sim, config, result2a.data)
 
     assert result.success is True
-    assert result.data is None
+    assert result.data is not None
+    assert "pending_memories" in result.data
     assert result.error is None
 
 
 @pytest.mark.asyncio
 async def test_phase4_succeeds_with_no_op(demo_sim: Simulation, config: Config) -> None:
     """Phase 4 stub succeeds and returns None data."""
-    result = await execute_phase4(demo_sim, config, None)  # type: ignore[arg-type]
+    pending_memories = {"char1": "memory1", "char2": "memory2"}
+    result = await execute_phase4(demo_sim, config, None, pending_memories)  # type: ignore[arg-type]
 
     assert result.success is True
     assert result.data is None
@@ -247,15 +256,17 @@ async def test_phase2a_includes_characters_in_location(
 
     # Alice is in tavern
     tavern_result = result.data["tavern"]
-    assert "alice" in tavern_result["characters"]
-    assert "bob" not in tavern_result["characters"]
-    assert tavern_result["characters"]["alice"]["location"] == "tavern"
+    assert "alice" in tavern_result.characters
+    assert "bob" not in tavern_result.characters
+    assert isinstance(tavern_result.characters["alice"], CharacterUpdate)
+    assert tavern_result.characters["alice"].location == "tavern"
 
     # Bob is in forest
     forest_result = result.data["forest"]
-    assert "bob" in forest_result["characters"]
-    assert "alice" not in forest_result["characters"]
-    assert forest_result["characters"]["bob"]["location"] == "forest"
+    assert "bob" in forest_result.characters
+    assert "alice" not in forest_result.characters
+    assert isinstance(forest_result.characters["bob"], CharacterUpdate)
+    assert forest_result.characters["bob"].location == "forest"
 
 
 @pytest.mark.asyncio
@@ -265,14 +276,14 @@ async def test_phase2a_preserves_character_state(
     """Phase 2a preserves existing character internal/external state."""
     result = await execute_phase2a(sim_with_chars_in_locations, config, None)  # type: ignore[arg-type]
 
-    alice_update = result.data["tavern"]["characters"]["alice"]
-    assert alice_update["internal_state"] == "feeling curious"
-    assert alice_update["external_intent"] == "explore the room"
+    alice_update = result.data["tavern"].characters["alice"]
+    assert alice_update.internal_state == "feeling curious"
+    assert alice_update.external_intent == "explore the room"
 
     # Bob has None states, should become empty strings
-    bob_update = result.data["forest"]["characters"]["bob"]
-    assert bob_update["internal_state"] == ""
-    assert bob_update["external_intent"] == ""
+    bob_update = result.data["forest"].characters["bob"]
+    assert bob_update.internal_state == ""
+    assert bob_update.external_intent == ""
 
 
 @pytest.mark.asyncio

@@ -230,8 +230,8 @@ class TickRunner:
             raise PhaseError("phase1", result1.error or "Unknown error")
         logger.debug("Phase 1 completed: %d intentions", len(result1.data))
 
-        # Phase 2a: Scene resolution (still stub, passes None)
-        result2a = await execute_phase2a(simulation, self._config, None)  # type: ignore[arg-type]
+        # Phase 2a: Scene resolution
+        result2a = await execute_phase2a(simulation, self._config, llm_client)
         if not result2a.success:
             raise PhaseError("phase2a", result2a.error or "Unknown error")
         logger.debug("Phase 2a completed: %d locations", len(result2a.data))
@@ -247,14 +247,15 @@ class TickRunner:
         for loc_id, data in result2b.data.items():
             self._narratives[loc_id] = data.get("narrative", "")
 
-        # Phase 3: Apply results (still stub, passes None)
-        result3 = await execute_phase3(simulation, self._config, None)  # type: ignore[arg-type]
+        # Phase 3: Apply results (pass master_results from phase 2a)
+        result3 = await execute_phase3(simulation, self._config, result2a.data)
         if not result3.success:
             raise PhaseError("phase3", result3.error or "Unknown error")
         logger.debug("Phase 3 completed")
 
-        # Phase 4: Memory update (still stub, passes None)
-        result4 = await execute_phase4(simulation, self._config, None)  # type: ignore[arg-type]
+        # Phase 4: Memory update (pass pending_memories from phase 3)
+        pending_memories = result3.data["pending_memories"]
+        result4 = await execute_phase4(simulation, self._config, llm_client, pending_memories)
         if not result4.success:
             raise PhaseError("phase4", result4.error or "Unknown error")
         logger.debug("Phase 4 completed")

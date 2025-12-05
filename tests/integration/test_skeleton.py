@@ -81,7 +81,10 @@ async def test_run_tick_increments_current_tick(temp_demo_sim: Path, temp_config
     async def mock_execute(simulation, config, llm_client):
         return _mock_phase1_result(simulation)
 
-    with patch("src.runner.execute_phase1", mock_execute):
+    with (
+        patch("src.runner.execute_phase1", mock_execute),
+        patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
+    ):
         runner = TickRunner(temp_config, [])
         result = await runner.run_tick("demo-sim")
 
@@ -104,7 +107,10 @@ async def test_run_tick_returns_narratives(temp_demo_sim: Path, temp_config: Con
     async def mock_execute(simulation, config, llm_client):
         return _mock_phase1_result(simulation)
 
-    with patch("src.runner.execute_phase1", mock_execute):
+    with (
+        patch("src.runner.execute_phase1", mock_execute),
+        patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
+    ):
         runner = TickRunner(temp_config, [])
         result = await runner.run_tick("demo-sim")
 
@@ -147,7 +153,10 @@ async def test_run_tick_calls_narrators(temp_demo_sim: Path, temp_config: Config
     async def mock_execute(simulation, config, llm_client):
         return _mock_phase1_result(simulation)
 
-    with patch("src.runner.execute_phase1", mock_execute):
+    with (
+        patch("src.runner.execute_phase1", mock_execute),
+        patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
+    ):
         runner = TickRunner(temp_config, [MockNarrator()])
         result = await runner.run_tick("demo-sim")
 
@@ -234,7 +243,10 @@ def test_run_command_success(
     async def mock_execute(simulation, config, llm_client):
         return _mock_phase1_result(simulation)
 
-    with patch("src.runner.execute_phase1", mock_execute):
+    with (
+        patch("src.runner.execute_phase1", mock_execute),
+        patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
+    ):
         runner = CliRunner()
         result = runner.invoke(app, ["run", "demo-sim"])
 
