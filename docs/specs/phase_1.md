@@ -1,6 +1,6 @@
 # phase_1.md
 
-## Status: NOT_STARTED
+## Status: READY
 
 Phase 1 generates character intentions — what each character wants to do this tick.
 Collects context (identity, state, memory, location, others), renders prompts,
@@ -111,12 +111,13 @@ when designing Phase 2a prompts.
 1. Create PromptRenderer with simulation path
 2. Group characters by location (for "others" context)
 3. For each character:
-   a. Get character's location
+   a. Validate location exists in simulation.locations
+      - If invalid → immediate fallback to idle + warning + continue
    b. Get others in same location (identity only)
    c. Render system prompt (no variables in default)
    d. Render user prompt with context
    e. Create LLMRequest with entity_key="intention:{id}"
-4. Execute batch via llm_client.create_batch()
+4. Execute batch via llm_client.create_batch() (only for valid characters)
 5. Process results:
    - Success → use IntentionResponse
    - LLMError → fallback + warning + console message
@@ -201,6 +202,7 @@ Phase 1 does not exit directly. Returns PhaseResult, Runner handles exit codes.
 
 | Situation | Handling |
 |-----------|----------|
+| Invalid location (not in simulation.locations) | Immediate fallback to idle (no LLM call) |
 | LLM timeout (after retries) | Fallback to idle |
 | LLM rate limit (after retries) | Fallback to idle |
 | LLM refusal | Fallback to idle |
@@ -221,36 +223,54 @@ If some characters succeed and some fail:
 
 ### Unit Tests (tests/unit/test_phase1.py)
 
-**Context Assembly:**
-- test_build_context_single_character — alone in location
-- test_build_context_multiple_characters — others list populated
-- test_build_context_empty_memory — handles empty memory cells
+**IntentionResponse:**
+- test_intention_response_creation — basic creation
+- test_intention_response_unicode — Cyrillic support
+- test_intention_response_empty_string — empty string allowed
 
-**Prompt Rendering:**
-- test_render_system_prompt — renders without variables
-- test_render_user_prompt — renders with full context
-- test_render_uses_simulation_override — picks sim prompt over default
+**_group_by_location:**
+- test_single_character_single_location
+- test_multiple_characters_same_location
+- test_multiple_characters_different_locations
+- test_empty_characters
+- test_mixed_locations
+
+**Context Assembly:**
+- test_build_context_single_character_alone — alone, others=[]
+- test_build_context_multiple_characters_same_location — others populated
+- test_build_context_characters_different_locations — isolated contexts
 
 **Batch Execution:**
 - test_execute_all_success — all characters get intentions
-- test_execute_partial_failure — mix of success and fallback
-- test_execute_all_failure — all fallback to idle
+- test_execute_creates_correct_requests — entity_key format
+- test_execute_empty_simulation — empty data returned
 
 **Fallback:**
+- test_execute_partial_failure_fallback — mix success/fallback
+- test_execute_all_failure_fallback — all fallback to idle
 - test_fallback_logs_warning — logger.warning called
-- test_fallback_prints_console — print called with message
-- test_fallback_returns_idle — intention is "idle"
+- test_fallback_prints_console — print with error type
+- test_execute_invalid_location_fallback — invalid location → immediate idle
+- test_execute_all_invalid_locations_no_batch — no LLM call if all invalid
 
 **Result Structure:**
 - test_result_has_all_characters — every character in output
 - test_result_success_always_true — success=True even with fallbacks
+- test_result_data_contains_intention_response — correct type
+
+**Prompt Rendering:**
+- test_render_system_prompt_no_variables
+- test_render_user_prompt_with_context
+- test_renderer_uses_simulation_path
 
 ### Integration Tests (tests/integration/test_phase1_integration.py)
 
+Uses `demo-sim` simulation with real characters and prompts.
+
 **With Real LLM:**
-- test_generate_intention_real_llm — actual intention generated
-- test_intention_respects_character_context — intention reflects character
-- test_intention_language_matches_simulation — Russian sim → Russian intention
+- test_generate_intention_real_llm — all characters get non-idle intentions
+- test_intention_language_matches_simulation — Russian prompts → Cyrillic output
+- test_multiple_characters_unique_intentions — unique intentions per character
 
 Markers: `@pytest.mark.integration`, `@pytest.mark.slow`
 

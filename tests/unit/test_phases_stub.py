@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -13,6 +14,7 @@ from src.phases import (
     execute_phase3,
     execute_phase4,
 )
+from src.phases.phase1 import IntentionResponse
 from src.utils.storage import (
     Character,
     CharacterIdentity,
@@ -108,12 +110,31 @@ def sim_with_chars_in_locations() -> Simulation:
     )
 
 
+@pytest.fixture
+def mock_llm_client() -> MagicMock:
+    """Create mock LLM client for Phase 1 tests."""
+    client = MagicMock()
+    client.create_batch = AsyncMock()
+    return client
+
+
 @pytest.mark.asyncio
 async def test_phase1_returns_intentions_for_all_characters(
-    demo_sim: Simulation, config: Config
+    demo_sim: Simulation, config: Config, mock_llm_client: MagicMock
 ) -> None:
-    """Phase 1 stub returns intention for each character."""
-    result = await execute_phase1(demo_sim, config, None)  # type: ignore[arg-type]
+    """Phase 1 returns intention for each character."""
+    # Mock LLM to return intentions for all characters
+    intentions = [
+        IntentionResponse(intention=f"intention for {char_id}") for char_id in demo_sim.characters
+    ]
+    mock_llm_client.create_batch.return_value = intentions
+
+    with patch("src.phases.phase1.PromptRenderer") as mock_renderer_class:
+        mock_renderer = MagicMock()
+        mock_renderer.render.return_value = "rendered prompt"
+        mock_renderer_class.return_value = mock_renderer
+
+        result = await execute_phase1(demo_sim, config, mock_llm_client)
 
     assert result.success is True
     assert result.error is None
@@ -122,7 +143,7 @@ async def test_phase1_returns_intentions_for_all_characters(
     # Should have intention for each character
     for char_id in demo_sim.characters:
         assert char_id in result.data
-        assert result.data[char_id]["intention"] == "idle"
+        assert isinstance(result.data[char_id], IntentionResponse)
 
 
 @pytest.mark.asyncio
@@ -180,9 +201,18 @@ async def test_phase4_succeeds_with_no_op(demo_sim: Simulation, config: Config) 
 
 
 @pytest.mark.asyncio
-async def test_phase1_handles_empty_simulation(empty_sim: Simulation, config: Config) -> None:
+async def test_phase1_handles_empty_simulation(
+    empty_sim: Simulation, config: Config, mock_llm_client: MagicMock
+) -> None:
     """Phase 1 handles simulation with no characters."""
-    result = await execute_phase1(empty_sim, config, None)  # type: ignore[arg-type]
+    mock_llm_client.create_batch.return_value = []
+
+    with patch("src.phases.phase1.PromptRenderer") as mock_renderer_class:
+        mock_renderer = MagicMock()
+        mock_renderer.render.return_value = "rendered prompt"
+        mock_renderer_class.return_value = mock_renderer
+
+        result = await execute_phase1(empty_sim, config, mock_llm_client)
 
     assert result.success is True
     assert result.data == {}
