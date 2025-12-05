@@ -388,11 +388,11 @@ results = await client.create_batch(requests)
 
 **Задачи:**
 - Создать стабы фаз (возвращают хардкоженные данные):
-  - `src/phase1.py` — фиксированные IntentionResponse
-  - `src/phase2a.py` — фиксированный Master response
-  - `src/phase2b.py` — фиксированный NarrativeResponse
-  - `src/phase3.py` — применение результатов (логика без LLM)
-  - `src/phase4.py` — FIFO-сдвиг памяти (логика без LLM)
+  - `src/phases/phase1.py` — фиксированные IntentionResponse
+  - `src/phases/phase2a.py` — фиксированный Master response
+  - `src/phases/phase2b.py` — фиксированный NarrativeResponse
+  - `src/phases/phase3.py` — применение результатов (логика без LLM)
+  - `src/phases/phase4.py` — FIFO-сдвиг памяти (логика без LLM)
 - Создать `simulations/demo-sim/`:
   - `simulation.json` — current_tick: 0, status: "paused"
   - `characters/` — 2-3 персонажа
@@ -406,7 +406,7 @@ results = await client.create_batch(requests)
 **Артефакты:**
 - Задание: `docs/tasks/TS-B.0b-STUBS-001.md`
 - Отчёт: `docs/tasks/TS-B.0b-STUBS-001_REPORT.md`
-- Стабы: `src/phase1.py`, `src/phase2a.py`, `src/phase2b.py`, `src/phase3.py`, `src/phase4.py`
+- Стабы: `src/phases/phase1.py`, `src/phases/phase2a.py`, `src/phases/phase2b.py`, `src/phases/phase3.py`, `src/phases/phase4.py`
 - Данные: `simulations/demo-sim/`
 
 ---
@@ -553,7 +553,7 @@ user = renderer.render("phase1_intention_user", {
 
 Фаза 1 — сборка контекста, вызов LLM, валидация ответа, graceful degradation.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 10 — Graceful Degradation)
@@ -581,7 +581,7 @@ user = renderer.render("phase1_intention_user", {
 - Задание: `docs/tasks/TS-B.1b-PHASE1-001.md`
 - Отчёт: `docs/tasks/TS-B.1b-PHASE1-001_REPORT.md`
 - Спецификация: `docs/specs/phase_1.md`
-- Модуль: `src/phase1.py`
+- Модуль: `src/phases/phase1.py`
 - Тесты: `tests/unit/test_phase1.py`, `tests/integration/test_phase1_integration.py`
 
 ---
@@ -616,7 +616,7 @@ user = renderer.render("phase1_intention_user", {
 - Задание: `docs/tasks/TS-B.2-PHASE3-001.md`
 - Отчёт: `docs/tasks/TS-B.2-PHASE3-001_REPORT.md`
 - Спецификация: `docs/specs/phase_3.md`
-- Модуль: `src/phase3.py`
+- Модуль: `src/phases/phase3.py`
 - Тесты: `tests/unit/test_phase3.py`
 
 ---
@@ -681,16 +681,21 @@ user = renderer.render("phase1_intention_user", {
 - Написать спецификации:
   - `docs/specs/phase_2a.md`
   - `docs/specs/phase_2b.md`
-- Реализовать `src/phase2a.py` (арбитр):
+- Реализовать `src/phases/phase2a.py` (арбитр):
   - Сборка контекста локации + все намерения персонажей
   - Вызов LLMClient
   - Валидация по `Master.schema.json`
   - **Fallback:** при `LLMError` → `MasterResponse.empty_fallback()` + warning
-- Реализовать `src/phase2b.py` (нарратив):
+- Реализовать `src/phases/phase2b.py` (нарратив):
   - Генерация человекочитаемого описания
   - Валидация по `NarrativeResponse.schema.json`
   - **Fallback:** при `LLMError` → `"[Тишина в локации]"` + warning
-- Написать тесты
+- Обновить `src/runner.py`:
+  - Передать `llm_client` в `execute_phase2a()` и `execute_phase2b()`
+  - Убрать `# type: ignore` комментарии
+- Обновить `tests/unit/test_runner.py`:
+  - Мокать LLMClient для тестов Phase 2a/2b
+- Написать тесты фаз
 
 **Ожидаемый результат:**
 - Полный цикл: намерения → разрешение → нарратив
@@ -701,7 +706,7 @@ user = renderer.render("phase1_intention_user", {
 - Задание: `docs/tasks/TS-B.3b-PHASE2-001.md`
 - Отчёт: `docs/tasks/TS-B.3b-PHASE2-001_REPORT.md`
 - Спецификации: `docs/specs/phase_2a.md`, `docs/specs/phase_2b.md`
-- Модули: `src/phase2a.py`, `src/phase2b.py`
+- Модули: `src/phases/phase2a.py`, `src/phases/phase2b.py`
 - Тесты: `tests/unit/test_phase2a.py`, `tests/unit/test_phase2b.py`, `tests/integration/test_phase2_integration.py`
 
 ---
@@ -755,13 +760,18 @@ user = renderer.render("phase1_intention_user", {
 
 **Задачи:**
 - Написать спецификацию `docs/specs/phase_4.md`
-- Реализовать `src/phase4.py`:
+- Реализовать `src/phases/phase4.py`:
   - Суммаризация: summary + выпадающая ячейка K → новый summary
   - FIFO-сдвиг ячеек памяти
   - Добавление новой записи (memory_entry) в ячейку 0
   - Вызов LLMClient для суммаризации
   - **Fallback:** при `LLMError` → оставить старую память + warning
-- Написать тесты
+- Обновить `src/runner.py`:
+  - Передать `llm_client` в `execute_phase4()`
+  - Убрать `# type: ignore` комментарий
+- Обновить `tests/unit/test_runner.py`:
+  - Мокать LLMClient для тестов Phase 4
+- Написать тесты фазы
 
 **Ожидаемый результат:**
 - Персонажи накапливают память
@@ -773,7 +783,7 @@ user = renderer.render("phase1_intention_user", {
 - Задание: `docs/tasks/TS-B.4b-PHASE4-001.md`
 - Отчёт: `docs/tasks/TS-B.4b-PHASE4-001_REPORT.md`
 - Спецификация: `docs/specs/phase_4.md`
-- Модуль: `src/phase4.py`
+- Модуль: `src/phases/phase4.py`
 - Тесты: `tests/unit/test_phase4.py`, `tests/integration/test_phase4_integration.py`
 
 ---
