@@ -82,7 +82,7 @@ class TestResetCommand:
             result = runner.invoke(app, ["reset", sim_id])
 
         assert result.exit_code == EXIT_INPUT_ERROR
-        assert f"Template for '{sim_id}' not found" in result.stdout
+        assert f"Template for '{sim_id}' not found" in result.output
 
     def test_reset_command_storage_error(self, tmp_path: Path) -> None:
         """Reset command exits with code 5 on storage error."""
@@ -101,4 +101,4 @@ class TestResetCommand:
             result = runner.invoke(app, ["reset", "test"])
 
         assert result.exit_code == EXIT_IO_ERROR
-        assert "Storage error" in result.stdout
+        assert "Storage error" in result.output

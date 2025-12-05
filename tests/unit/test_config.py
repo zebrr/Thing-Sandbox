@@ -317,9 +317,7 @@ class TestConfigLoad:
         """New simulation fields are loaded correctly from config.toml."""
         config_toml = tmp_path / "config.toml"
         simulation_config = (
-            'default_mode = "continuous"\n'
-            "default_interval = 300\n"
-            "default_ticks_limit = 10"
+            'default_mode = "continuous"\ndefault_interval = 300\ndefault_ticks_limit = 10'
         )
         config_toml.write_text(
             make_minimal_config_toml(simulation=simulation_config),
