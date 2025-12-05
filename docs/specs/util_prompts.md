@@ -1,6 +1,6 @@
 # util_prompts.md
 
-## Status: DRAFT
+## Status: READY
 
 Prompt rendering module for Thing' Sandbox. Loads Jinja2 templates and renders them
 with simulation context. Integrates with Config for template resolution.
