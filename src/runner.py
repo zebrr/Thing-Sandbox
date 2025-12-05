@@ -29,6 +29,8 @@ from src.phases import (
     execute_phase3,
     execute_phase4,
 )
+from src.utils.llm import LLMClient
+from src.utils.llm_adapters import OpenAIAdapter
 from src.utils.storage import Simulation, load_simulation, save_simulation
 
 if TYPE_CHECKING:
@@ -119,13 +121,14 @@ class TickRunner:
         1. Resolve path and load simulation
         2. Check status is "paused"
         3. Set status to "running" (in memory)
-        4. Execute all phases sequentially
-        5. Extract narratives from phase2b
-        6. Increment current_tick
-        7. Set status to "paused"
-        8. Save simulation to disk
-        9. Call all narrators
-        10. Return TickResult
+        4. Create LLM client for phases
+        5. Execute all phases sequentially
+        6. Extract narratives from phase2b
+        7. Increment current_tick
+        8. Set status to "paused"
+        9. Save simulation to disk
+        10. Call all narrators
+        11. Return TickResult
 
         Args:
             sim_id: Simulation identifier.
@@ -152,20 +155,23 @@ class TickRunner:
         # Step 3: Set status to running (in memory)
         simulation.status = "running"
 
-        # Step 4: Execute all phases
-        await self._execute_phases(simulation)
+        # Step 4: Create LLM client
+        llm_client = self._create_llm_client(simulation)
 
-        # Step 5: Extract narratives from phase2b (done in _execute_phases)
+        # Step 5: Execute all phases
+        await self._execute_phases(simulation, llm_client)
+
+        # Step 6: Extract narratives from phase2b (done in _execute_phases)
         # Phase2b result is stored during execution
 
-        # Step 6: Increment current_tick
+        # Step 7: Increment current_tick
         simulation.current_tick += 1
         tick_number = simulation.current_tick
 
-        # Step 7: Set status to paused
+        # Step 8: Set status to paused
         simulation.status = "paused"
 
-        # Step 8: Save simulation
+        # Step 9: Save simulation
         save_simulation(sim_path, simulation)
         logger.info("Saved simulation %s at tick %d", sim_id, tick_number)
 
@@ -173,7 +179,7 @@ class TickRunner:
         narratives = self._narratives
         location_names = {loc_id: loc.identity.name for loc_id, loc in simulation.locations.items()}
 
-        # Step 9: Build result
+        # Step 10: Build result
         result = TickResult(
             sim_id=sim_id,
             tick_number=tick_number,
@@ -182,33 +188,55 @@ class TickRunner:
             success=True,
         )
 
-        # Step 10: Call all narrators
+        # Step 11: Call all narrators
         self._call_narrators(result)
 
         return result
 
-    async def _execute_phases(self, simulation: Simulation) -> None:
+    def _create_llm_client(self, simulation: Simulation) -> LLMClient:
+        """Create LLM client for phase execution.
+
+        Args:
+            simulation: Simulation to create client for.
+
+        Returns:
+            Configured LLMClient.
+        """
+        # Use phase1 config for now (all phases will use same adapter)
+        adapter = OpenAIAdapter(self._config.phase1)
+
+        # Convert characters to entity dicts for chain management
+        entities = [char.model_dump() for char in simulation.characters.values()]
+
+        return LLMClient(
+            adapter=adapter,
+            entities=entities,
+            default_depth=self._config.phase1.response_chain_depth,
+        )
+
+    async def _execute_phases(self, simulation: Simulation, llm_client: LLMClient) -> None:
         """Execute all phases sequentially.
 
         Args:
             simulation: Simulation instance to process.
+            llm_client: LLM client for API calls.
 
         Raises:
             PhaseError: If any phase returns success=False.
         """
         # Phase 1: Intentions
-        result1 = await execute_phase1(simulation, self._config, None)  # type: ignore[arg-type]
+        result1 = await execute_phase1(simulation, self._config, llm_client)
         if not result1.success:
             raise PhaseError("phase1", result1.error or "Unknown error")
         logger.debug("Phase 1 completed: %d intentions", len(result1.data))
 
-        # Phase 2a: Scene resolution
+        # Phase 2a: Scene resolution (still stub, passes None)
         result2a = await execute_phase2a(simulation, self._config, None)  # type: ignore[arg-type]
         if not result2a.success:
             raise PhaseError("phase2a", result2a.error or "Unknown error")
         logger.debug("Phase 2a completed: %d locations", len(result2a.data))
 
-        # Phase 2b: Narrative generation
+        # Phase 2b: Narrative generation (still stub, passes None)
         result2b = await execute_phase2b(simulation, self._config, None)  # type: ignore[arg-type]
         if not result2b.success:
             raise PhaseError("phase2b", result2b.error or "Unknown error")
@@ -219,13 +247,13 @@ class TickRunner:
         for loc_id, data in result2b.data.items():
             self._narratives[loc_id] = data.get("narrative", "")
 
-        # Phase 3: Apply results
+        # Phase 3: Apply results (still stub, passes None)
         result3 = await execute_phase3(simulation, self._config, None)  # type: ignore[arg-type]
         if not result3.success:
             raise PhaseError("phase3", result3.error or "Unknown error")
         logger.debug("Phase 3 completed")
 
-        # Phase 4: Memory update
+        # Phase 4: Memory update (still stub, passes None)
         result4 = await execute_phase4(simulation, self._config, None)  # type: ignore[arg-type]
         if not result4.success:
             raise PhaseError("phase4", result4.error or "Unknown error")
