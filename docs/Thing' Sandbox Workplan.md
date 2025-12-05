@@ -456,7 +456,7 @@ python -m src.cli run demo-sim
 
 Модуль для загрузки и рендеринга Jinja2 шаблонов промптов.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Ключевые документы:**
 - Архитектура: `docs/Thing' Sandbox Architecture.md`

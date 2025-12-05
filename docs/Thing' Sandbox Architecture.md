@@ -22,25 +22,29 @@ thing'-sandbox/
 ├── src/
 │   ├── schemas/              # JSON-схемы валидации
 │   ├── prompts/              # дефолтные промпты
+│   ├── phases/               # фазы такта
+│   │   ├── __init__.py
+│   │   ├── common.py         # общие типы (PhaseResult)
+│   │   ├── phase1.py         # намерения
+│   │   ├── phase2a.py        # разрешение сцены (арбитр)
+│   │   ├── phase2b.py        # генерация нарратива
+│   │   ├── phase3.py         # применение результатов
+│   │   └── phase4.py         # обновление памяти
 │   ├── utils/                # переиспользуемые компоненты
 │   │   ├── __init__.py
 │   │   ├── exit_codes.py     # коды завершения
 │   │   ├── llm.py            # LLM Client (фасад для фаз)
 │   │   ├── llm_errors.py     # иерархия ошибок LLM
-│   │   ├── llm_adapters/     # транспортный слой (MVP: только OpenAI)
+│   │   ├── llm_adapters/     # транспортный слой
 │   │   │   ├── __init__.py
 │   │   │   ├── base.py       # общие типы (AdapterResponse, ResponseUsage)
 │   │   │   └── openai.py     # OpenAI Responses API adapter
+│   │   ├── prompts.py        # рендеринг промптов (Jinja2)
 │   │   └── storage.py        # чтение/запись симуляций
 │   ├── __init__.py
 │   ├── cli.py                # точка входа (typer)
 │   ├── config.py             # загрузка конфигов
 │   ├── runner.py             # оркестрация такта
-│   ├── phase1.py             # намерения
-│   ├── phase2a.py            # разрешение сцены (арбитр)
-│   ├── phase2b.py            # генерация нарратива
-│   ├── phase3.py             # применение результатов
-│   ├── phase4.py             # обновление памяти
 │   └── narrators.py          # вывод: console, file, telegram, web
 │
 ├── tests/
@@ -300,15 +304,17 @@ python -m src.cli reset demo-sim
 | CLI | `cli.py` | Точка входа, парсит аргументы, вызывает Runner |
 | Config | `config.py` | Загрузка конфигурации, PhaseConfig, резолв промптов |
 | Runner | `runner.py` | Оркестрация такта, вызывает фазы 1→2a→2b→3→4, атомарность |
-| Phase 1 | `phase1.py` | Формирование намерений персонажей |
-| Phase 2a | `phase2a.py` | Разрешение сцены арбитром |
-| Phase 2b | `phase2b.py` | Генерация нарратива |
-| Phase 3 | `phase3.py` | Применение результатов (без LLM) |
-| Phase 4 | `phase4.py` | Обновление памяти персонажей |
+| Phase Common | `phases/common.py` | Общие типы для фаз (PhaseResult) |
+| Phase 1 | `phases/phase1.py` | Формирование намерений персонажей |
+| Phase 2a | `phases/phase2a.py` | Разрешение сцены арбитром |
+| Phase 2b | `phases/phase2b.py` | Генерация нарратива |
+| Phase 3 | `phases/phase3.py` | Применение результатов (без LLM) |
+| Phase 4 | `phases/phase4.py` | Обновление памяти персонажей |
 | LLM Client | `utils/llm.py` | Провайдер-агностичный фасад, batch execution, chains |
 | LLM Errors | `utils/llm_errors.py` | Иерархия ошибок LLM |
 | LLM Adapter Base | `utils/llm_adapters/base.py` | Общие типы: AdapterResponse, ResponseUsage |
-| OpenAI Adapter | `utils/llm_adapters/openai.py` | Транспорт для OpenAI Responses API (MVP адаптер, другие — позже) |
+| OpenAI Adapter | `utils/llm_adapters/openai.py` | Транспорт для OpenAI Responses API |
+| Prompt Renderer | `utils/prompts.py` | Загрузка и рендеринг Jinja2 промптов |
 | Storage | `utils/storage.py` | Чтение/запись симуляции |
 | Exit Codes | `utils/exit_codes.py` | Стандартные коды завершения |
 | Narrators | `narrators.py` | Вывод: console, file, telegram, web |
