@@ -38,6 +38,7 @@ Resolves prompt file path with simulation override support.
   1. `{sim_path}/prompts/{prompt_name}.md` (if sim_path provided and file exists)
   2. `src/prompts/{prompt_name}.md` (default)
 - **Warnings**: logs warning if sim_path provided but override not found
+- **Integration**: used by `PromptRenderer` (see `docs/specs/util_prompts.md`)
 
 ### Config Attributes
 

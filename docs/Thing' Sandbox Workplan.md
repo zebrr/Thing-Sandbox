@@ -452,6 +452,69 @@ python -m src.cli run demo-sim
 
 ---
 
+### B.0d: Prompt Renderer
+
+Модуль для загрузки и рендеринга Jinja2 шаблонов промптов.
+
+**STATUS: не готов**
+
+**Ключевые документы:**
+- Архитектура: `docs/Thing' Sandbox Architecture.md`
+- Подход к промптингу: `docs/Thing' Sandbox LLM Prompting.md`
+- Текущая спека Config: `docs/specs/core_config.md`
+- Схемы данных: `src/schemas/` (Character, Location, IntentionResponse и др.)
+
+**Входные требования:**
+- B.0c готов
+- Промпты существуют в `src/prompts/`
+
+**Задачи:**
+- Написать спецификацию `docs/specs/util_prompts.md`
+- Реализовать `src/utils/prompts.py`:
+  - `PromptRenderer` класс:
+    - Jinja2 Environment с `StrictUndefined` (ошибка при отсутствующих переменных)
+    - `render(template_name, context)` — загрузка + рендеринг
+    - Поиск шаблонов: simulation override → default (`src/prompts/`)
+  - Интеграция с `Config.resolve_prompt()` для определения пути
+- Обновить `docs/specs/core_config.md`:
+  - Уточнить взаимодействие `resolve_prompt()` с PromptRenderer
+- Написать юнит-тесты:
+  - Рендеринг с валидным контекстом
+  - Ошибка при отсутствующей переменной
+  - Override шаблона из симуляции
+  - Несуществующий шаблон
+
+**Ожидаемый результат:**
+```python
+from src.utils.prompts import PromptRenderer
+from src.config import Config
+
+config = Config.load()
+renderer = PromptRenderer(config, sim_path="/path/to/simulation")
+
+# Рендеринг system prompt
+system = renderer.render("phase1_intention_system", {
+    "world_name": "War of the Worlds",
+    "world_description": "Victorian England, 1898..."
+})
+
+# Рендеринг user prompt
+user = renderer.render("phase1_intention_user", {
+    "character": character_data,
+    "location": location_data,
+    "visible_characters": [...],
+})
+```
+
+**Артефакты:**
+- Задание: `docs/tasks/TS-B.0d-PROMPTS-001.md`
+- Отчёт: `docs/tasks/TS-B.0d-PROMPTS-001_REPORT.md`
+- Спецификация: `docs/specs/util_prompts.md`
+- Модуль: `src/utils/prompts.py`
+- Тесты: `tests/unit/test_prompts.py`
+
+---
+
 ### B.1a: Спроектировать промпт Phase 1 (намерения)
 
 Разработка промпта для генерации намерений персонажей.
