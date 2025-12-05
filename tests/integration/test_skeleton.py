@@ -1,7 +1,12 @@
-"""Integration tests for skeleton system (Runner + CLI + Narrators)."""
+"""Integration tests for skeleton system (Runner + CLI + Narrators).
+
+These tests verify the integration between Runner, CLI, and Narrators
+without making real LLM calls. Phase 1 is mocked to return idle intentions.
+"""
 
 import shutil
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from typer.testing import CliRunner
@@ -9,6 +14,8 @@ from typer.testing import CliRunner
 from src.cli import app
 from src.config import Config
 from src.narrators import ConsoleNarrator
+from src.phases.common import PhaseResult
+from src.phases.phase1 import IntentionResponse
 from src.runner import TickRunner
 from src.utils.storage import SimulationNotFoundError, load_simulation
 
@@ -56,6 +63,12 @@ def temp_config(tmp_path: Path, project_root: Path) -> Config:
     return Config.load(config_path=config_dest, project_root=tmp_path)
 
 
+def _mock_phase1_result(simulation):
+    """Create mock Phase 1 result with idle intentions for all characters."""
+    intentions = {char_id: IntentionResponse(intention="idle") for char_id in simulation.characters}
+    return PhaseResult(success=True, data=intentions)
+
+
 @pytest.mark.asyncio
 async def test_run_tick_increments_current_tick(temp_demo_sim: Path, temp_config: Config) -> None:
     """Running a tick increments current_tick from 0 to 1."""
@@ -64,9 +77,13 @@ async def test_run_tick_increments_current_tick(temp_demo_sim: Path, temp_config
     assert sim_before.current_tick == 0
     assert sim_before.status == "paused"
 
-    # Run tick
-    runner = TickRunner(temp_config, [])
-    result = await runner.run_tick("demo-sim")
+    # Mock Phase 1 to avoid LLM calls
+    async def mock_execute(simulation, config, llm_client):
+        return _mock_phase1_result(simulation)
+
+    with patch("src.runner.execute_phase1", mock_execute):
+        runner = TickRunner(temp_config, [])
+        result = await runner.run_tick("demo-sim")
 
     # Verify result
     assert result.success is True
@@ -84,8 +101,12 @@ async def test_run_tick_returns_narratives(temp_demo_sim: Path, temp_config: Con
     sim = load_simulation(temp_demo_sim)
     location_ids = list(sim.locations.keys())
 
-    runner = TickRunner(temp_config, [])
-    result = await runner.run_tick("demo-sim")
+    async def mock_execute(simulation, config, llm_client):
+        return _mock_phase1_result(simulation)
+
+    with patch("src.runner.execute_phase1", mock_execute):
+        runner = TickRunner(temp_config, [])
+        result = await runner.run_tick("demo-sim")
 
     assert result.success is True
     assert isinstance(result.narratives, dict)
@@ -123,8 +144,12 @@ async def test_run_tick_calls_narrators(temp_demo_sim: Path, temp_config: Config
         def output(self, result):
             captured_results.append(result)
 
-    runner = TickRunner(temp_config, [MockNarrator()])
-    result = await runner.run_tick("demo-sim")
+    async def mock_execute(simulation, config, llm_client):
+        return _mock_phase1_result(simulation)
+
+    with patch("src.runner.execute_phase1", mock_execute):
+        runner = TickRunner(temp_config, [MockNarrator()])
+        result = await runner.run_tick("demo-sim")
 
     assert len(captured_results) == 1
     assert captured_results[0] is result
@@ -205,8 +230,13 @@ def test_run_command_success(
     """Run command completes successfully and shows completion message."""
     monkeypatch.setattr("src.cli.Config.load", lambda: temp_config)
 
-    runner = CliRunner()
-    result = runner.invoke(app, ["run", "demo-sim"])
+    # Mock Phase 1 to avoid LLM calls
+    async def mock_execute(simulation, config, llm_client):
+        return _mock_phase1_result(simulation)
+
+    with patch("src.runner.execute_phase1", mock_execute):
+        runner = CliRunner()
+        result = runner.invoke(app, ["run", "demo-sim"])
 
     # Should exit successfully
     assert result.exit_code == 0

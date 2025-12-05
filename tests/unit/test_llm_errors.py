@@ -3,17 +3,17 @@
 import pytest
 from pydantic import BaseModel
 
+from src.utils.llm_adapters.base import (
+    AdapterResponse,
+    ResponseDebugInfo,
+    ResponseUsage,
+)
 from src.utils.llm_errors import (
     LLMError,
     LLMIncompleteError,
     LLMRateLimitError,
     LLMRefusalError,
     LLMTimeoutError,
-)
-from src.utils.llm_adapters.base import (
-    AdapterResponse,
-    ResponseDebugInfo,
-    ResponseUsage,
 )
 
 
@@ -199,9 +199,7 @@ class TestResponseDebugInfo:
 
     def test_with_service_tier(self) -> None:
         """Can specify service tier."""
-        debug = ResponseDebugInfo(
-            model="gpt-4o", created_at=1700000000, service_tier="default"
-        )
+        debug = ResponseDebugInfo(model="gpt-4o", created_at=1700000000, service_tier="default")
         assert debug.service_tier == "default"
 
     def test_with_reasoning_summary(self) -> None:

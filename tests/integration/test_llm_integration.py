@@ -6,8 +6,6 @@ They make real API calls and may incur costs.
 Run with: pytest tests/integration/test_llm_integration.py -v -s
 """
 
-import os
-
 import pytest
 from pydantic import BaseModel
 

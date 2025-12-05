@@ -206,9 +206,7 @@ class TestOpenAIAdapterExecuteSuccess:
             assert response.debug.model == "gpt-test-model"
 
     @pytest.mark.asyncio
-    async def test_reasoning_tokens_extracted(
-        self, reasoning_config: PhaseConfig
-    ) -> None:
+    async def test_reasoning_tokens_extracted(self, reasoning_config: PhaseConfig) -> None:
         """Extracts reasoning tokens for reasoning models."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
             adapter = OpenAIAdapter(reasoning_config)
@@ -231,9 +229,7 @@ class TestOpenAIAdapterExecuteSuccess:
             assert response.usage.reasoning_tokens == 25
 
     @pytest.mark.asyncio
-    async def test_previous_response_id_passed(
-        self, phase_config: PhaseConfig
-    ) -> None:
+    async def test_previous_response_id_passed(self, phase_config: PhaseConfig) -> None:
         """Passes previous_response_id to API when provided."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
             adapter = OpenAIAdapter(phase_config)
@@ -303,9 +299,7 @@ class TestOpenAIAdapterExecuteSuccess:
             assert "reasoning" not in call_kwargs
 
     @pytest.mark.asyncio
-    async def test_optional_params_passed_when_set(
-        self, reasoning_config: PhaseConfig
-    ) -> None:
+    async def test_optional_params_passed_when_set(self, reasoning_config: PhaseConfig) -> None:
         """Passes truncation and verbosity when set."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
             # Modify config to include verbosity
@@ -402,9 +396,7 @@ class TestOpenAIAdapterExecuteSuccess:
             assert response.debug.reasoning_summary is None
 
     @pytest.mark.asyncio
-    async def test_reasoning_summary_extracted(
-        self, reasoning_config: PhaseConfig
-    ) -> None:
+    async def test_reasoning_summary_extracted(self, reasoning_config: PhaseConfig) -> None:
         """Extracts reasoning summary for reasoning models."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
             adapter = OpenAIAdapter(reasoning_config)
@@ -432,9 +424,7 @@ class TestOpenAIAdapterRetryLogic:
     """Tests for retry logic."""
 
     @pytest.mark.asyncio
-    async def test_retry_on_rate_limit_then_success(
-        self, phase_config: PhaseConfig
-    ) -> None:
+    async def test_retry_on_rate_limit_then_success(self, phase_config: PhaseConfig) -> None:
         """Retries on rate limit and succeeds."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
             adapter = OpenAIAdapter(phase_config)
@@ -453,9 +443,7 @@ class TestOpenAIAdapterRetryLogic:
                 output_parsed=SimpleAnswer(answer="success"),
             )
 
-            adapter.client.responses.parse = AsyncMock(
-                side_effect=[rate_limit_error, mock_success]
-            )
+            adapter.client.responses.parse = AsyncMock(side_effect=[rate_limit_error, mock_success])
 
             with patch("asyncio.sleep", new_callable=AsyncMock):
                 response = await adapter.execute(
@@ -468,9 +456,7 @@ class TestOpenAIAdapterRetryLogic:
             assert adapter.client.responses.parse.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_rate_limit_exhausted_raises(
-        self, phase_config: PhaseConfig
-    ) -> None:
+    async def test_rate_limit_exhausted_raises(self, phase_config: PhaseConfig) -> None:
         """Raises LLMRateLimitError after max retries."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
             # Set max_retries to 2 for faster test
@@ -503,9 +489,7 @@ class TestOpenAIAdapterRetryLogic:
             assert adapter.client.responses.parse.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_retry_on_timeout_then_success(
-        self, phase_config: PhaseConfig
-    ) -> None:
+    async def test_retry_on_timeout_then_success(self, phase_config: PhaseConfig) -> None:
         """Retries on timeout and succeeds."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
             adapter = OpenAIAdapter(phase_config)
@@ -739,24 +723,18 @@ class TestOpenAIAdapterDeleteResponse:
             adapter.client.responses.delete.assert_called_once_with("resp_to_delete")
 
     @pytest.mark.asyncio
-    async def test_delete_not_found_returns_false(
-        self, phase_config: PhaseConfig
-    ) -> None:
+    async def test_delete_not_found_returns_false(self, phase_config: PhaseConfig) -> None:
         """Returns False when response not found."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
             adapter = OpenAIAdapter(phase_config)
-            adapter.client.responses.delete = AsyncMock(
-                side_effect=Exception("Not found")
-            )
+            adapter.client.responses.delete = AsyncMock(side_effect=Exception("Not found"))
 
             result = await adapter.delete_response("resp_nonexistent")
 
             assert result is False
 
     @pytest.mark.asyncio
-    async def test_delete_network_error_returns_false(
-        self, phase_config: PhaseConfig
-    ) -> None:
+    async def test_delete_network_error_returns_false(self, phase_config: PhaseConfig) -> None:
         """Returns False on network error, does not raise."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-123"}):
             adapter = OpenAIAdapter(phase_config)
