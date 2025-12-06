@@ -668,7 +668,7 @@ user = renderer.render("phase1_intention_user", {
 
 Фазы 2a/2b — разрешение сцены и генерация человекочитаемого описания, graceful degradation.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 10 — Graceful Degradation)
