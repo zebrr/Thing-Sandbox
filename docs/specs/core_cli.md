@@ -20,6 +20,14 @@ app = typer.Typer(
 )
 ```
 
+**Usage:**
+```bash
+python -m src.cli [OPTIONS] COMMAND [ARGS]
+```
+
+**Options:**
+- `--verbose / -v` — Enable DEBUG level logging (default: INFO)
+
 ### Commands
 
 #### run
@@ -201,13 +209,14 @@ In continuous mode, handle SIGINT/SIGTERM:
 
 ## Dependencies
 
-- **Standard Library**: sys, asyncio
+- **Standard Library**: sys, asyncio, logging
 - **External**: typer>=0.9.0
 - **Internal**:
   - config (Config, ConfigError)
   - runner (TickRunner, TickResult)
   - utils.storage (Storage, SimulationNotFoundError)
   - utils.exit_codes
+  - utils.logging_config (setup_logging)
   - narrators (ConsoleNarrator)
 
 ---
@@ -219,6 +228,9 @@ In continuous mode, handle SIGINT/SIGTERM:
 ```bash
 # Run single tick (MVP)
 python -m src.cli run my-sim
+
+# Run with verbose logging
+python -m src.cli --verbose run my-sim
 
 # Future: continuous mode
 python -m src.cli run my-sim --continuous
@@ -271,11 +283,21 @@ done
 ### Typer Setup
 
 ```python
+import logging
 import typer
 from src.config import Config
 from src.runner import TickRunner
+from src.utils.logging_config import setup_logging
 
 app = typer.Typer()
+
+@app.callback()
+def main(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
+) -> None:
+    """Thing' Sandbox CLI - LLM-driven text simulation."""
+    level = logging.DEBUG if verbose else logging.INFO
+    setup_logging(level=level)
 
 @app.command()
 def run(sim_id: str) -> None:

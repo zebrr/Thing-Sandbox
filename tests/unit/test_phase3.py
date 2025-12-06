@@ -510,25 +510,6 @@ async def test_fallback_logs_warning(simple_sim: Simulation, config: Config) -> 
         mock_logger.warning.assert_called()
 
 
-@pytest.mark.asyncio
-async def test_fallback_prints_console(simple_sim: Simulation, config: Config, capsys) -> None:
-    """Print with warning emoji prefix for validation failures."""
-    master_results = {
-        "unknown_location": MasterOutput(
-            tick=5,
-            location_id="unknown_location",
-            characters={},
-            location=LocationUpdate(),
-        ),
-    }
-
-    await execute(simple_sim, config, master_results)
-
-    captured = capsys.readouterr()
-    assert "⚠️" in captured.out
-    assert "unknown_location" in captured.out
-
-
 # =============================================================================
 # Edge Cases
 # =============================================================================

@@ -26,7 +26,6 @@ Main entry point for Phase 3.
   - Mutates simulation.locations[].state.moment
   - Mutates simulation.locations[].identity.description
   - Logs warning for invalid data
-  - Prints to console for invalid data
 
 ---
 
@@ -77,15 +76,15 @@ Every character mentioned in master_results gets an entry in pending_memories.
 1. Initialize pending_memories = {}
 2. For each (location_id, master_output) in master_results:
    a. Validate location_id exists in simulation.locations
-      - If not → warning + print + skip this location
+      - If not → log warning + skip this location
    b. Apply location updates:
       - If moment is not None → update location.state.moment
       - If description is not None → update location.identity.description
    c. For each (char_id, char_update) in master_output.characters:
       i. Validate char_id exists in simulation.characters
-         - If not → warning + print + skip this character
+         - If not → log warning + skip this character
       ii. Validate char_update.location exists in simulation.locations
-         - If not → warning + print + keep current location
+         - If not → log warning + keep current location
       iii. Update character.state.location (if valid)
       iv. Update character.state.internal_state
       v. Update character.state.external_intent
@@ -99,20 +98,15 @@ Every character mentioned in master_results gets an entry in pending_memories.
 
 | Situation | Handling |
 |-----------|----------|
-| location_id not in simulation.locations | Skip entire location + warning + print |
-| char_id not in simulation.characters | Skip character + warning + print |
-| char_update.location not in simulation.locations | Keep current location + warning + print |
+| location_id not in simulation.locations | Skip entire location + log warning |
+| char_id not in simulation.characters | Skip character + log warning |
+| char_update.location not in simulation.locations | Keep current location + log warning |
 
-All fallbacks follow the pattern:
-1. Log: `logger.warning(f"Phase 3: {description}")`
-2. Print: `print(f"⚠️  Phase 3: {description}")`
-
-### Console Output Format
-
+All fallbacks log via `logger.warning()`. Log format (via EmojiFormatter):
 ```
-⚠️  Phase 3: unknown location 'mars' in master_results, skipping
-⚠️  Phase 3: unknown character 'ghost' in location 'tavern', skipping
-⚠️  Phase 3: invalid target location 'nowhere' for character 'bob', keeping current
+2025.06.05 14:32:10 | WARNING | 🔧 phase3: Phase 3: unknown location 'mars' in master_results, skipping
+2025.06.05 14:32:10 | WARNING | 🔧 phase3: Phase 3: unknown character 'ghost' in location 'tavern', skipping
+2025.06.05 14:32:10 | WARNING | 🔧 phase3: Phase 3: invalid target location 'nowhere' for character 'bob', keeping current
 ```
 
 ---
@@ -260,7 +254,6 @@ for char_id, memory in result3.data["pending_memories"].items():
 - test_invalid_char_id_skipped — unknown character in master_results
 - test_invalid_target_location_keeps_current — character stays in place
 - test_fallback_logs_warning — logger.warning called
-- test_fallback_prints_console — print with ⚠️ prefix
 
 **Edge Cases:**
 - test_empty_master_results — empty dict returns empty pending_memories

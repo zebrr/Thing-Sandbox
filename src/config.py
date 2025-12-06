@@ -160,7 +160,7 @@ class Config:
         self.phase4 = phase4
         self.openai_api_key = openai_api_key
         self.telegram_bot_token = telegram_bot_token
-        self._project_root = project_root
+        self.project_root = project_root
 
     @classmethod
     def load(
@@ -313,7 +313,7 @@ class Config:
                 )
 
         # Check default prompt
-        default_path = self._project_root / "src" / "prompts" / prompt_filename
+        default_path = self.project_root / "src" / "prompts" / prompt_filename
         if default_path.exists():
             logger.debug("Using default prompt: %s", default_path)
             return default_path

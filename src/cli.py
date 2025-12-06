@@ -12,6 +12,7 @@ Example:
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import typer
 
@@ -25,6 +26,7 @@ from src.utils.exit_codes import (
     EXIT_RUNTIME_ERROR,
     EXIT_SUCCESS,
 )
+from src.utils.logging_config import setup_logging
 from src.utils.storage import (
     InvalidDataError,
     SimulationNotFoundError,
@@ -38,6 +40,15 @@ app = typer.Typer(
     name="thing-sandbox",
     help="Thing' Sandbox - LLM-driven text simulation",
 )
+
+
+@app.callback()
+def main(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
+) -> None:
+    """Thing' Sandbox CLI - LLM-driven text simulation."""
+    level = logging.DEBUG if verbose else logging.INFO
+    setup_logging(level=level)
 
 
 @app.command()
@@ -105,7 +116,7 @@ def status(sim_id: str) -> None:
         typer.echo(f"Configuration error: {e}", err=True)
         raise typer.Exit(code=EXIT_CONFIG_ERROR)
 
-    sim_path = config._project_root / "simulations" / sim_id
+    sim_path = config.project_root / "simulations" / sim_id
 
     try:
         simulation = load_simulation(sim_path)
@@ -145,7 +156,7 @@ def reset(sim_id: str) -> None:
         raise typer.Exit(code=EXIT_CONFIG_ERROR)
 
     try:
-        reset_simulation(sim_id, config._project_root)
+        reset_simulation(sim_id, config.project_root)
         typer.echo(f"[{sim_id}] Reset to template.")
     except TemplateNotFoundError:
         typer.echo(f"Error: Template for '{sim_id}' not found", err=True)

@@ -75,6 +75,14 @@ OpenAI API key from `.env`. None if not set.
 
 Telegram bot token from `.env`. None if not set.
 
+#### Config.project_root: Path
+
+Project root directory path. Auto-detected by searching for `pyproject.toml` from current directory upward.
+
+Used for:
+- Resolving `simulations/` path
+- Resolving default prompts in `src/prompts/`
+
 ---
 
 ## Internal Models

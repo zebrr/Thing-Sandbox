@@ -32,7 +32,7 @@ def config() -> Config:
 @pytest.fixture
 def demo_sim(config: Config) -> Simulation:
     """Load demo simulation."""
-    sim_path = config._project_root / "simulations" / "demo-sim"
+    sim_path = config.project_root / "simulations" / "demo-sim"
     return load_simulation(sim_path)
 
 

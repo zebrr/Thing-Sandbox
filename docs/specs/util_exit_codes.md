@@ -66,7 +66,52 @@ Logs exit code with optional message.
 
 ## Test Coverage
 
-TBD
+### Unit Tests (tests/unit/test_exit_codes.py)
+
+**TestExitCodeConstants:**
+- test_exit_success_is_zero
+- test_exit_config_error_is_one
+- test_exit_input_error_is_two
+- test_exit_runtime_error_is_three
+- test_exit_api_limit_error_is_four
+- test_exit_io_error_is_five
+
+**TestExitCodeDictionaries:**
+- test_all_codes_have_names
+- test_all_codes_have_descriptions
+
+**TestGetExitCodeName:**
+- test_returns_success_for_zero
+- test_returns_config_error_for_one
+- test_returns_input_error_for_two
+- test_returns_runtime_error_for_three
+- test_returns_api_limit_error_for_four
+- test_returns_io_error_for_five
+- test_returns_unknown_for_unknown_code
+- test_returns_unknown_for_negative_code
+
+**TestGetExitCodeDescription:**
+- test_returns_description_for_success
+- test_returns_description_for_config_error
+- test_returns_description_for_input_error
+- test_returns_description_for_runtime_error
+- test_returns_description_for_api_limit_error
+- test_returns_description_for_io_error
+- test_returns_unknown_description_for_unknown_code
+- test_returns_unknown_description_for_negative_code
+
+**TestLogExit:**
+- test_success_logs_via_info
+- test_config_error_logs_via_error
+- test_input_error_logs_via_error
+- test_runtime_error_logs_via_error
+- test_api_limit_error_logs_via_error
+- test_io_error_logs_via_error
+- test_log_message_includes_code_name
+- test_log_message_includes_description
+- test_log_message_includes_custom_message
+- test_log_message_without_custom_message
+- test_unknown_code_logs_via_error
 
 ## Usage Examples
 

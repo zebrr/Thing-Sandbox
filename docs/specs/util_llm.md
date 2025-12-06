@@ -368,7 +368,7 @@ class LLMClient:
 ### Phase 1: Character Intentions
 
 ```python
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from src.config import Config
 from src.utils.llm import LLMClient, LLMRequest
 from src.utils.llm_adapters.openai import OpenAIAdapter
@@ -376,9 +376,7 @@ from src.utils.llm_errors import LLMError
 
 
 class IntentionResponse(BaseModel):
-    intention: str
-    target: str | None = None
-    reasoning: str
+    intention: str = Field(..., min_length=1)
 
 
 async def process_intentions(
@@ -392,7 +390,7 @@ async def process_intentions(
         entities=characters,
         default_depth=config.phase1.response_chain_depth,
     )
-    
+
     # Build requests
     prompt = load_prompt("phase1_intention")
     requests = [
@@ -404,23 +402,19 @@ async def process_intentions(
         )
         for char in characters
     ]
-    
+
     # Execute batch
     results = await client.create_batch(requests)
-    
+
     # Handle results with fallback
     intentions = []
     for char, result in zip(characters, results):
         if isinstance(result, LLMError):
             logger.warning(f"Phase 1 failed for {char['identity']['id']}: {result}")
-            intentions.append(IntentionResponse(
-                intention="idle",
-                target=None,
-                reasoning="LLM error, using fallback",
-            ))
+            intentions.append(IntentionResponse(intention="idle"))
         else:
             intentions.append(result)
-    
+
     return intentions
 ```
 

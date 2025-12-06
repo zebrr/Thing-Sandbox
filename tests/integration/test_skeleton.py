@@ -19,6 +19,9 @@ from src.phases.phase1 import IntentionResponse
 from src.runner import TickRunner
 from src.utils.storage import SimulationNotFoundError, load_simulation
 
+# Mark all tests in this module as integration tests
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def temp_demo_sim(tmp_path: Path, project_root: Path) -> Path:

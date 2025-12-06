@@ -34,7 +34,6 @@ Main entry point for Phase 1.
   - data: dict[str, IntentionResponse] — mapping character_id → intention
 - **Side effects**:
   - Logs warning for each fallback
-  - Prints to console for each fallback
   - Accumulates usage in character entities via llm_client
 
 ---
@@ -96,8 +95,7 @@ All characters processed in parallel via `LLMClient.create_batch()`.
 When LLM fails for a character (all retries exhausted):
 
 1. Return `IntentionResponse(intention="idle")`
-2. Log warning: `logger.warning(f"Phase 1: {char_id} fallback to idle ({error})")`
-3. Print to console: `print(f"⚠️  Phase 1: {char_id} fallback to idle ({error})")`
+2. Log warning: `logger.warning("Phase 1: %s fallback to idle (%s: %s)", char_id, error_type, error)`
 
 **Note**: "idle" is a technical marker. Phase 2a arbiter should handle it
 as "character does nothing this tick". This will be addressed in B.3a
@@ -120,7 +118,7 @@ when designing Phase 2a prompts.
 4. Execute batch via llm_client.create_batch() (only for valid characters)
 5. Process results:
    - Success → use IntentionResponse
-   - LLMError → fallback + warning + console message
+   - LLMError → fallback + warning log
 6. Return PhaseResult(success=True, data=intentions)
 ```
 
@@ -248,8 +246,7 @@ If some characters succeed and some fail:
 **Fallback:**
 - test_execute_partial_failure_fallback — mix success/fallback
 - test_execute_all_failure_fallback — all fallback to idle
-- test_fallback_logs_warning — logger.warning called
-- test_fallback_prints_console — print with error type
+- test_fallback_logs_warning — logger.warning called with error details
 - test_execute_invalid_location_fallback — invalid location → immediate idle
 - test_execute_all_invalid_locations_no_batch — no LLM call if all invalid
 
@@ -285,16 +282,9 @@ Skip condition: `OPENAI_API_KEY` not set
 - DEBUG: context assembly, prompt rendering
 - WARNING: fallback to idle (with error details)
 
-### Console Output
-
-Fallback message format:
+Log format (via EmojiFormatter):
 ```
-⚠️  Phase 1: {character_id} fallback to idle ({error_type}: {message})
-```
-
-Example:
-```
-⚠️  Phase 1: ogilvy fallback to idle (LLMRateLimitError: Rate limit after 3 attempts)
+2025.06.05 14:32:09 | WARNING | 🎭 phase1: Phase 1: ogilvy fallback to idle (LLMRateLimitError: Rate limit after 3 attempts)
 ```
 
 ### Character Grouping

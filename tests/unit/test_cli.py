@@ -57,7 +57,7 @@ class TestResetCommand:
 
         # Create mock config that returns our test path
         mock_config = MagicMock()
-        mock_config._project_root = base_path
+        mock_config.project_root = base_path
 
         with patch("src.cli.Config.load", return_value=mock_config):
             result = runner.invoke(app, ["reset", sim_id])
@@ -76,7 +76,7 @@ class TestResetCommand:
         sim_id = "nonexistent"
 
         mock_config = MagicMock()
-        mock_config._project_root = base_path
+        mock_config.project_root = base_path
 
         with patch("src.cli.Config.load", return_value=mock_config):
             result = runner.invoke(app, ["reset", sim_id])
@@ -89,7 +89,7 @@ class TestResetCommand:
         from src.utils.storage import StorageIOError
 
         mock_config = MagicMock()
-        mock_config._project_root = tmp_path
+        mock_config.project_root = tmp_path
 
         with (
             patch("src.cli.Config.load", return_value=mock_config),

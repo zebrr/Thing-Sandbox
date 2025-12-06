@@ -13,7 +13,7 @@ Example:
 
 import logging
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.config import Config
 from src.phases.common import PhaseResult
@@ -36,7 +36,7 @@ class IntentionResponse(BaseModel):
         'I will explore the cave'
     """
 
-    intention: str
+    intention: str = Field(..., min_length=1)
 
 
 def _group_by_location(characters: dict[str, Character]) -> dict[str, list[Character]]:
@@ -96,7 +96,7 @@ async def execute(
         'Approach the cylinder cautiously...'
     """
     # Create PromptRenderer with simulation path for override resolution
-    sim_path = config._project_root / "simulations" / simulation.id
+    sim_path = config.project_root / "simulations" / simulation.id
     renderer = PromptRenderer(config, sim_path=sim_path)
 
     # Group characters by location for efficient "others" lookup
@@ -118,10 +118,6 @@ async def execute(
                 "Phase 1: %s fallback to idle (invalid location: %s)",
                 char_id,
                 char.state.location,
-            )
-            print(
-                f"\u26a0\ufe0f  Phase 1: {char_id} fallback to idle "
-                f"(invalid location: {char.state.location})"
             )
             intentions[char_id] = IntentionResponse(intention="idle")
             continue
@@ -164,7 +160,6 @@ async def execute(
             if isinstance(result, LLMError):
                 error_type = type(result).__name__
                 logger.warning("Phase 1: %s fallback to idle (%s: %s)", char_id, error_type, result)
-                print(f"\u26a0\ufe0f  Phase 1: {char_id} fallback to idle ({error_type}: {result})")
                 intentions[char_id] = IntentionResponse(intention="idle")
             else:
                 intentions[char_id] = result  # type: ignore[assignment]

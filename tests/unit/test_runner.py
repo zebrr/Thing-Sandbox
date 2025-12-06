@@ -1,0 +1,472 @@
+"""Unit tests for runner module."""
+
+import json
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from src.config import Config
+from src.phases.common import PhaseResult
+from src.runner import PhaseError, SimulationBusyError, TickResult, TickRunner
+from src.utils.storage import (
+    Character,
+    CharacterIdentity,
+    CharacterMemory,
+    CharacterState,
+    Location,
+    LocationIdentity,
+    LocationState,
+    Simulation,
+    SimulationNotFoundError,
+)
+
+
+@pytest.fixture
+def mock_config(tmp_path: Path) -> Config:
+    """Create mock config for testing."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[simulation]
+memory_cells = 10
+
+[phase1]
+model = "gpt-4o"
+timeout = 30
+max_retries = 3
+reasoning_effort = "low"
+response_chain_depth = 5
+
+[phase2a]
+model = "gpt-4o"
+timeout = 30
+max_retries = 3
+reasoning_effort = "low"
+response_chain_depth = 0
+
+[phase2b]
+model = "gpt-4o"
+timeout = 30
+max_retries = 3
+reasoning_effort = "low"
+response_chain_depth = 0
+
+[phase4]
+model = "gpt-4o"
+timeout = 30
+max_retries = 3
+reasoning_effort = "low"
+response_chain_depth = 5
+""",
+        encoding="utf-8",
+    )
+    return Config.load(config_path=config_path, project_root=tmp_path)
+
+
+@pytest.fixture
+def sample_simulation() -> Simulation:
+    """Create sample simulation for testing."""
+    return Simulation(
+        id="test-sim",
+        current_tick=0,
+        created_at=datetime.now(),
+        status="paused",
+        characters={
+            "bob": Character(
+                identity=CharacterIdentity(
+                    id="bob",
+                    name="Bob",
+                    description="A test character",
+                ),
+                state=CharacterState(location="tavern"),
+                memory=CharacterMemory(),
+            ),
+        },
+        locations={
+            "tavern": Location(
+                identity=LocationIdentity(
+                    id="tavern",
+                    name="The Tavern",
+                    description="A cozy place",
+                ),
+                state=LocationState(moment="Evening"),
+            ),
+        },
+    )
+
+
+def create_test_simulation_on_disk(tmp_path: Path, status: str = "paused") -> Path:
+    """Create test simulation files on disk."""
+    sim_path = tmp_path / "simulations" / "test-sim"
+    sim_path.mkdir(parents=True)
+    (sim_path / "characters").mkdir()
+    (sim_path / "locations").mkdir()
+    (sim_path / "logs").mkdir()
+
+    (sim_path / "simulation.json").write_text(
+        json.dumps(
+            {
+                "id": "test-sim",
+                "current_tick": 0,
+                "created_at": "2025-01-15T10:00:00Z",
+                "status": status,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    (sim_path / "characters" / "bob.json").write_text(
+        json.dumps(
+            {
+                "identity": {"id": "bob", "name": "Bob", "description": "Test char"},
+                "state": {"location": "tavern"},
+                "memory": {"cells": [], "summary": ""},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    (sim_path / "locations" / "tavern.json").write_text(
+        json.dumps(
+            {
+                "identity": {"id": "tavern", "name": "Tavern", "description": "A place"},
+                "state": {"moment": "Evening"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    return sim_path
+
+
+class TestTickResult:
+    """Tests for TickResult dataclass."""
+
+    def test_tick_result_success(self) -> None:
+        """TickResult stores success state."""
+        result = TickResult(
+            sim_id="my-sim",
+            tick_number=42,
+            narratives={"tavern": "Bob enters."},
+            location_names={"tavern": "The Tavern"},
+            success=True,
+        )
+
+        assert result.sim_id == "my-sim"
+        assert result.tick_number == 42
+        assert result.narratives == {"tavern": "Bob enters."}
+        assert result.location_names == {"tavern": "The Tavern"}
+        assert result.success is True
+        assert result.error is None
+
+    def test_tick_result_failure(self) -> None:
+        """TickResult stores failure state with error."""
+        result = TickResult(
+            sim_id="my-sim",
+            tick_number=0,
+            narratives={},
+            location_names={},
+            success=False,
+            error="Phase 1 failed",
+        )
+
+        assert result.success is False
+        assert result.error == "Phase 1 failed"
+
+
+class TestSimulationBusyError:
+    """Tests for SimulationBusyError exception."""
+
+    def test_simulation_busy_error_message(self) -> None:
+        """SimulationBusyError includes sim_id in message."""
+        error = SimulationBusyError("my-sim")
+
+        assert error.sim_id == "my-sim"
+        assert "my-sim" in str(error)
+        assert "running" in str(error)
+
+
+class TestPhaseError:
+    """Tests for PhaseError exception."""
+
+    def test_phase_error_message(self) -> None:
+        """PhaseError includes phase name and error in message."""
+        error = PhaseError("phase1", "LLM timeout")
+
+        assert error.phase_name == "phase1"
+        assert error.error == "LLM timeout"
+        assert "phase1" in str(error)
+        assert "LLM timeout" in str(error)
+
+
+class TestTickRunner:
+    """Tests for TickRunner class."""
+
+    def test_tick_runner_init(self, mock_config: Config) -> None:
+        """TickRunner initializes with config and narrators."""
+        narrators: list = []
+        runner = TickRunner(mock_config, narrators)
+
+        assert runner._config is mock_config
+        assert runner._narrators is narrators
+
+    @pytest.mark.asyncio
+    async def test_run_tick_simulation_not_found(self, mock_config: Config) -> None:
+        """run_tick raises SimulationNotFoundError for missing simulation."""
+        runner = TickRunner(mock_config, [])
+
+        with pytest.raises(SimulationNotFoundError):
+            await runner.run_tick("nonexistent-sim")
+
+    @pytest.mark.asyncio
+    async def test_run_tick_simulation_busy(self, mock_config: Config, tmp_path: Path) -> None:
+        """run_tick raises SimulationBusyError when status is running."""
+        # Create simulation with running status
+        create_test_simulation_on_disk(tmp_path, status="running")
+
+        runner = TickRunner(mock_config, [])
+
+        with pytest.raises(SimulationBusyError) as exc_info:
+            await runner.run_tick("test-sim")
+
+        assert exc_info.value.sim_id == "test-sim"
+
+    @pytest.mark.asyncio
+    async def test_run_tick_success(self, mock_config: Config, tmp_path: Path) -> None:
+        """run_tick completes successfully and increments tick."""
+        create_test_simulation_on_disk(tmp_path)
+
+        # Mock all phases to succeed
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={"bob": MagicMock()})
+
+        async def mock_phase2a(sim, cfg, client):
+            return PhaseResult(
+                success=True,
+                data={
+                    "tavern": MagicMock(
+                        location_id="tavern",
+                        characters={"bob": MagicMock()},
+                        location=MagicMock(),
+                    ),
+                },
+            )
+
+        async def mock_phase2b(sim, cfg, client):
+            return PhaseResult(
+                success=True,
+                data={
+                    "tavern": {"narrative": "Test narrative."},
+                },
+            )
+
+        async def mock_phase3(sim, cfg, master_results):
+            return PhaseResult(success=True, data={"pending_memories": {"bob": "memory"}})
+
+        async def mock_phase4(sim, cfg, client, memories):
+            return PhaseResult(success=True, data=None)
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a),
+            patch("src.runner.execute_phase2b", mock_phase2b),
+            patch("src.runner.execute_phase3", mock_phase3),
+            patch("src.runner.execute_phase4", mock_phase4),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [])
+            result = await runner.run_tick("test-sim")
+
+        assert result.success is True
+        assert result.tick_number == 1
+        assert result.sim_id == "test-sim"
+        assert "tavern" in result.narratives
+        assert result.narratives["tavern"] == "Test narrative."
+
+    @pytest.mark.asyncio
+    async def test_run_tick_phase1_fails(self, mock_config: Config, tmp_path: Path) -> None:
+        """run_tick raises PhaseError when phase1 fails."""
+        create_test_simulation_on_disk(tmp_path)
+
+        async def mock_phase1_fail(sim, cfg, client):
+            return PhaseResult(success=False, data=None, error="LLM error")
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1_fail),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [])
+
+            with pytest.raises(PhaseError) as exc_info:
+                await runner.run_tick("test-sim")
+
+            assert exc_info.value.phase_name == "phase1"
+            assert "LLM error" in exc_info.value.error
+
+    @pytest.mark.asyncio
+    async def test_run_tick_phase2a_fails(self, mock_config: Config, tmp_path: Path) -> None:
+        """run_tick raises PhaseError when phase2a fails."""
+        create_test_simulation_on_disk(tmp_path)
+
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2a_fail(sim, cfg, client):
+            return PhaseResult(success=False, data=None, error="Arbiter error")
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a_fail),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [])
+
+            with pytest.raises(PhaseError) as exc_info:
+                await runner.run_tick("test-sim")
+
+            assert exc_info.value.phase_name == "phase2a"
+
+    @pytest.mark.asyncio
+    async def test_run_tick_calls_narrators(self, mock_config: Config, tmp_path: Path) -> None:
+        """run_tick calls all narrators after success."""
+        create_test_simulation_on_disk(tmp_path)
+
+        captured_results: list = []
+
+        class MockNarrator:
+            def output(self, result: TickResult) -> None:
+                captured_results.append(result)
+
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2a(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2b(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase3(sim, cfg, master_results):
+            return PhaseResult(success=True, data={"pending_memories": {}})
+
+        async def mock_phase4(sim, cfg, client, memories):
+            return PhaseResult(success=True, data=None)
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a),
+            patch("src.runner.execute_phase2b", mock_phase2b),
+            patch("src.runner.execute_phase3", mock_phase3),
+            patch("src.runner.execute_phase4", mock_phase4),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [MockNarrator(), MockNarrator()])
+            await runner.run_tick("test-sim")
+
+        # Both narrators should be called
+        assert len(captured_results) == 2
+        assert all(r.success for r in captured_results)
+
+    @pytest.mark.asyncio
+    async def test_run_tick_narrator_failure_isolated(
+        self, mock_config: Config, tmp_path: Path
+    ) -> None:
+        """run_tick continues if narrator fails."""
+        create_test_simulation_on_disk(tmp_path)
+
+        call_count = 0
+
+        class FailingNarrator:
+            def output(self, result: TickResult) -> None:
+                raise RuntimeError("Narrator crashed")
+
+        class CountingNarrator:
+            def output(self, result: TickResult) -> None:
+                nonlocal call_count
+                call_count += 1
+
+        async def mock_phase(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase3(sim, cfg, master_results):
+            return PhaseResult(success=True, data={"pending_memories": {}})
+
+        async def mock_phase4(sim, cfg, client, memories):
+            return PhaseResult(success=True, data=None)
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase),
+            patch("src.runner.execute_phase2a", mock_phase),
+            patch("src.runner.execute_phase2b", mock_phase),
+            patch("src.runner.execute_phase3", mock_phase3),
+            patch("src.runner.execute_phase4", mock_phase4),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            # Failing narrator first, counting narrator second
+            runner = TickRunner(mock_config, [FailingNarrator(), CountingNarrator()])
+            result = await runner.run_tick("test-sim")
+
+        # Tick should still succeed
+        assert result.success is True
+        # Second narrator should still be called
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_run_tick_increments_current_tick(
+        self, mock_config: Config, tmp_path: Path
+    ) -> None:
+        """run_tick increments current_tick and saves to disk."""
+        sim_path = create_test_simulation_on_disk(tmp_path)
+
+        async def mock_phase(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase3(sim, cfg, master_results):
+            return PhaseResult(success=True, data={"pending_memories": {}})
+
+        async def mock_phase4(sim, cfg, client, memories):
+            return PhaseResult(success=True, data=None)
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase),
+            patch("src.runner.execute_phase2a", mock_phase),
+            patch("src.runner.execute_phase2b", mock_phase),
+            patch("src.runner.execute_phase3", mock_phase3),
+            patch("src.runner.execute_phase4", mock_phase4),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [])
+            result = await runner.run_tick("test-sim")
+
+        assert result.tick_number == 1
+
+        # Verify saved to disk
+        sim_json = json.loads((sim_path / "simulation.json").read_text(encoding="utf-8"))
+        assert sim_json["current_tick"] == 1
+        assert sim_json["status"] == "paused"
+
+    @pytest.mark.asyncio
+    async def test_run_tick_atomicity_no_save_on_failure(
+        self, mock_config: Config, tmp_path: Path
+    ) -> None:
+        """run_tick does not save state if phase fails."""
+        sim_path = create_test_simulation_on_disk(tmp_path)
+
+        async def mock_phase1_fail(sim, cfg, client):
+            return PhaseResult(success=False, data=None, error="Failed")
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1_fail),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [])
+
+            with pytest.raises(PhaseError):
+                await runner.run_tick("test-sim")
+
+        # Verify tick was NOT incremented
+        sim_json = json.loads((sim_path / "simulation.json").read_text(encoding="utf-8"))
+        assert sim_json["current_tick"] == 0
+        assert sim_json["status"] == "paused"

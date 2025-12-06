@@ -143,7 +143,7 @@ class TickRunner:
             StorageIOError: Failed to save results.
         """
         # Step 1: Resolve path and load simulation
-        sim_path = self._config._project_root / "simulations" / sim_id
+        sim_path = self._config.project_root / "simulations" / sim_id
         simulation = load_simulation(sim_path)
 
         logger.debug("Loaded simulation %s at tick %d", sim_id, simulation.current_tick)

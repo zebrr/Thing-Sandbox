@@ -4,6 +4,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from src.config import Config
 from src.phases.phase1 import IntentionResponse, _group_by_location, execute
@@ -146,10 +147,10 @@ class TestIntentionResponse:
         response = IntentionResponse(intention="Хочу исследовать пещеру")
         assert response.intention == "Хочу исследовать пещеру"
 
-    def test_intention_response_empty_string(self) -> None:
-        """IntentionResponse accepts empty string."""
-        response = IntentionResponse(intention="")
-        assert response.intention == ""
+    def test_intention_response_empty_string_rejected(self) -> None:
+        """IntentionResponse rejects empty string (min_length=1)."""
+        with pytest.raises(ValidationError, match="String should have at least 1 character"):
+            IntentionResponse(intention="")
 
 
 # =============================================================================
@@ -504,33 +505,8 @@ class TestExecuteFallback:
         assert "fallback to idle" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_fallback_prints_console(
-        self, config: Config, mock_llm_client: MagicMock, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Fallback prints message to console."""
-        alice = make_character("alice", "Alice", "tavern")
-        tavern = make_location("tavern", "The Tavern")
-        sim = make_simulation({"alice": alice}, {"tavern": tavern})
-
-        mock_llm_client.create_batch.return_value = [
-            LLMRateLimitError("Rate limit exceeded"),
-        ]
-
-        with patch("src.phases.phase1.PromptRenderer") as mock_renderer_class:
-            mock_renderer = MagicMock()
-            mock_renderer.render.return_value = "rendered prompt"
-            mock_renderer_class.return_value = mock_renderer
-
-            await execute(sim, config, mock_llm_client)
-
-        captured = capsys.readouterr()
-        assert "alice" in captured.out
-        assert "fallback to idle" in captured.out
-        assert "LLMRateLimitError" in captured.out
-
-    @pytest.mark.asyncio
     async def test_execute_invalid_location_fallback(
-        self, config: Config, mock_llm_client: MagicMock, capsys: pytest.CaptureFixture[str]
+        self, config: Config, mock_llm_client: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Character with invalid location falls back to idle immediately."""
         # Alice has valid location, Bob has invalid
@@ -560,10 +536,9 @@ class TestExecuteFallback:
         assert result.data["alice"].intention == "Alice explores"
         assert result.data["bob"].intention == "idle"
 
-        # Console message for Bob
-        captured = capsys.readouterr()
-        assert "bob" in captured.out
-        assert "invalid location" in captured.out
+        # Warning logged for Bob
+        assert "bob" in caplog.text
+        assert "invalid location" in caplog.text
 
         # Only one LLM request was made (for Alice)
         call_args = mock_llm_client.create_batch.call_args

@@ -55,7 +55,6 @@ async def execute(
                 "Phase 3: unknown location '%s' in master_results, skipping",
                 location_id,
             )
-            print(f"⚠️  Phase 3: unknown location '{location_id}' in master_results, skipping")
             continue
 
         location = simulation.locations[location_id]
@@ -78,10 +77,6 @@ async def execute(
                     char_id,
                     location_id,
                 )
-                print(
-                    f"⚠️  Phase 3: unknown character '{char_id}' "
-                    f"in location '{location_id}', skipping"
-                )
                 continue
 
             character = simulation.characters[char_id]
@@ -92,10 +87,6 @@ async def execute(
                     "Phase 3: invalid target location '%s' for character '%s', keeping current",
                     char_update.location,
                     char_id,
-                )
-                print(
-                    f"⚠️  Phase 3: invalid target location '{char_update.location}' "
-                    f"for character '{char_id}', keeping current"
                 )
                 # Keep current location, still update other fields
             else:

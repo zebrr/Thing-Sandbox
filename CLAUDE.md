@@ -1,6 +1,6 @@
-# CLAUDE.md - Claude Code Instructions - Project Thing' Sandbox v1.3
+# CLAUDE.md - Claude Code Instructions - Project Thing' Sandbox v1.4
 
-Workspace: `/Users/askold.romanov/code/thing'-sandbox`
+Workspace: `/Users/askold.romanov/code/thing-sandbox`
 
 ## Project Overview
 
@@ -38,38 +38,52 @@ At session start, detect environment:
 ## Project Structure
 
 ```
-thing'-sandbox/
-├── docs/                     # project documentation
-│   ├── specs/                # module specifications
-│   └── tasks/                # task assignments and reports
+thing-sandbox/
+├── docs/                          # project documentation
+│   ├── specs/                     # module specifications
+│   └── tasks/                     # task assignments and reports
 │
 ├── src/
-│   ├── schemas/              # JSON validation schemas (6 files)
-│   ├── prompts/              # default LLM prompts
-│   ├── utils/                # reusable components
-│   │   ├── llm.py            # LLM Client
-│   │   ├── storage.py        # simulation read/write
-│   │   └── exit_codes.py     # standard exit codes
-│   ├── cli.py                # entry point (typer)
-│   ├── config.py             # configuration loading
-│   ├── runner.py             # tick orchestration
-│   ├── phase1.py             # intentions
-│   ├── phase2a.py            # scene resolution (arbiter)
-│   ├── phase2b.py            # narrative generation
-│   ├── phase3.py             # result application
-│   ├── phase4.py             # memory update
-│   └── narrators.py          # output: console, file, telegram
+│   ├── schemas/                   # JSON schemas (documentation, not runtime)
+│   ├── prompts/                   # default LLM prompt templates
+│   ├── phases/                    # simulation phases
+│   │   ├── __init__.py
+│   │   ├── common.py              # shared phase utilities (PhaseResult)
+│   │   ├── phase1.py              # intentions
+│   │   ├── phase2a.py             # scene resolution (arbiter)
+│   │   ├── phase2b.py             # narrative generation
+│   │   ├── phase3.py              # result application
+│   │   └── phase4.py              # memory update
+│   ├── utils/                     # reusable components
+│   │   ├── __init__.py
+│   │   ├── exit_codes.py          # standard exit codes
+│   │   ├── llm.py                 # LLM Client facade
+│   │   ├── llm_errors.py          # LLM exception hierarchy
+│   │   ├── prompts.py             # Jinja2 template renderer
+│   │   ├── storage.py             # simulation read/write, Pydantic models
+│   │   └── llm_adapters/          # provider-specific adapters
+│   │       ├── __init__.py
+│   │       ├── base.py            # abstract adapter interface
+│   │       └── openai.py          # OpenAI Responses API adapter
+│   ├── __init__.py
+│   ├── cli.py                     # entry point (typer)
+│   ├── config.py                  # configuration loading
+│   ├── runner.py                  # tick orchestration
+│   └── narrators.py               # output: console, file, telegram
 │
 ├── tests/
-│   ├── unit/                 # unit tests
-│   ├── integration/          # integration tests
-│   └── conftest.py           # pytest fixtures
+│   ├── unit/                      # unit tests
+│   ├── integration/               # integration tests
+│   └── conftest.py                # pytest fixtures
 │
-├── simulations/              # simulation data (in .gitignore)
-├── config.toml               # application configuration
-├── requirements.txt          # runtime dependencies
-├── requirements-dev.txt      # dev dependencies
-└── pyproject.toml            # package and tool settings
+├── simulations/                   # simulation data
+│   ├── _templates/                # simulation templates (tracked)
+│   └── <sim-id>/                  # active simulations (in .gitignore)
+│
+├── config.toml                    # application configuration
+├── requirements.txt               # runtime dependencies
+├── requirements-dev.txt           # dev dependencies
+└── pyproject.toml                 # package and tool settings
 ```
 
 ### Key Components
@@ -79,18 +93,23 @@ thing'-sandbox/
 | CLI | `cli.py` | Entry point, argument parsing |
 | Config | `config.py` | Configuration loading, prompt resolution |
 | Runner | `runner.py` | Tick orchestration, atomicity |
-| Phase 1 | `phase1.py` | Character intention formation |
-| Phase 2a | `phase2a.py` | Scene resolution by arbiter |
-| Phase 2b | `phase2b.py` | Narrative generation |
-| Phase 3 | `phase3.py` | Result application (no LLM) |
-| Phase 4 | `phase4.py` | Memory summarization |
-| LLM Client | `utils/llm.py` | Unified LLM interface |
-| Storage | `utils/storage.py` | Simulation read/write |
+| Phase 1 | `phases/phase1.py` | Character intention formation |
+| Phase 2a | `phases/phase2a.py` | Scene resolution by arbiter |
+| Phase 2b | `phases/phase2b.py` | Narrative generation |
+| Phase 3 | `phases/phase3.py` | Result application (no LLM) |
+| Phase 4 | `phases/phase4.py` | Memory summarization |
+| Phase Common | `phases/common.py` | Shared utilities (PhaseResult) |
+| LLM Client | `utils/llm.py` | Unified LLM interface facade |
+| LLM Errors | `utils/llm_errors.py` | Exception hierarchy for LLM ops |
+| LLM Adapter Base | `utils/llm_adapters/base.py` | Abstract adapter interface |
+| LLM Adapter OpenAI | `utils/llm_adapters/openai.py` | OpenAI Responses API |
+| Prompts | `utils/prompts.py` | Jinja2 template rendering |
+| Storage | `utils/storage.py` | Simulation read/write, Pydantic models |
 | Narrators | `narrators.py` | Output channels |
 
 ### JSON Schemas
 
-Located in `src/schemas/`:
+Located in `src/schemas/`. These are **documentation artifacts** — the actual validation uses Pydantic models in code. Schemas document the LLM contract for human readers.
 
 | Schema | Purpose |
 |--------|---------|
@@ -127,9 +146,11 @@ If documentation is incomplete or unclear, **ASK** user — don't assume!
 
 | Type | Modules | Spec prefix | Example |
 |------|---------|-------------|---------|
-| Phase | `phase*.py` | `phase_` | `phase1.py` → `phase_1.md` |
+| Phase | `phases/phase*.py` | `phase_` | `phase1.py` → `phase_1.md` |
+| Phase Common | `phases/common.py` | `phase_` | `common.py` → `phase_common.md` |
 | Core | `cli.py`, `config.py`, `runner.py`, `narrators.py` | `core_` | `runner.py` → `core_runner.md` |
 | Utils | `utils/*.py` | `util_` | `utils/llm.py` → `util_llm.md` |
+| Adapters | `utils/llm_adapters/*.py` | `util_llm_adapter_` | `openai.py` → `util_llm_adapter_openai.md` |
 
 ## Standard Workflow
 
