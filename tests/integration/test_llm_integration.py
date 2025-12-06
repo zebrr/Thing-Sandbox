@@ -302,8 +302,9 @@ class TestUsageAccumulation:
         # Check usage accumulated
         usage = entity["_openai"]["usage"]
         assert usage["total_requests"] == 2
-        assert usage["total_input_tokens"] > 0
-        assert usage["total_output_tokens"] > 0
+        assert usage["total_tokens"] > 0
+        assert usage["reasoning_tokens"] >= 0
+        assert usage["cached_tokens"] >= 0
 
         # Cleanup
         for resp_id in entity.get("_openai", {}).get("intention_chain", []):

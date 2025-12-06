@@ -41,6 +41,13 @@ Initialize tick runner.
 
 Note: Uses `load_simulation()` and `save_simulation()` functions directly from `utils.storage`.
 
+#### Internal Attributes (set during run_tick)
+
+- `_char_entities: list[dict[str, Any]]` — entity dicts for characters (mutated by LLMClient)
+- `_loc_entities: list[dict[str, Any]]` — entity dicts for locations (mutated by LLMClient)
+- `_tick_stats: BatchStats` — accumulated statistics for the tick
+- `_narratives: dict[str, str]` — narratives extracted from phase 2b
+
 #### TickRunner.run_tick(sim_id: str) -> TickResult
 
 Execute one complete tick of simulation.
@@ -67,18 +74,23 @@ Execute one complete tick of simulation.
 1. Load simulation via load_simulation()
 2. Validate status == "paused"
 3. Set status = "running" (in memory only)
-4. Execute phases:
-   4.1. Phase 1 — character intentions (N requests)
-   4.2. Phase 2a — scene arbitration (L requests)
-   4.3. Phase 2b — narrative generation (L requests)
-   4.4. Phase 3 — apply results (0 requests)
-   4.5. Phase 4 — memory update (N requests)
-5. Collect narratives into TickResult
-6. Increment current_tick
-7. Set status = "paused"
-8. Save simulation atomically via save_simulation()
-9. Call each narrator with TickResult
-10. Return TickResult
+4. Create entity dicts for LLM clients (_create_entity_dicts)
+5. Initialize tick statistics (_tick_stats = BatchStats())
+6. Execute phases (_execute_phases):
+   6.1. Phase 1 — character intentions (N requests, char client)
+   6.2. Phase 2a — scene arbitration (L requests, loc client)
+   6.3. Phase 2b — narrative generation (L requests, stub)
+   6.4. Phase 3 — apply results (0 requests)
+   6.5. Phase 4 — memory update (N requests, char client)
+7. Sync _openai data back to simulation models (_sync_openai_data)
+8. Aggregate usage into simulation._openai (_aggregate_simulation_usage)
+9. Increment current_tick
+10. Set status = "paused"
+11. Save simulation atomically via save_simulation()
+12. Log tick completion with statistics
+13. Build TickResult with narratives
+14. Call each narrator with TickResult
+15. Return TickResult
 ```
 
 ### Atomicity
@@ -98,6 +110,60 @@ Save to disk (step 8)
 
 If crash between steps 3-8: simulation.json still shows "paused" with old tick number.
 Next run will re-execute the same tick from scratch.
+
+---
+
+## Internal Methods
+
+### _create_entity_dicts(simulation: Simulation) -> None
+
+Create entity dicts for LLM clients.
+
+Converts Pydantic models to dicts and stores them as instance attributes (`_char_entities`, `_loc_entities`). These dicts are mutated by LLMClient during phase execution (adds `_openai` key with chains and usage).
+
+### _create_char_llm_client(config: PhaseConfig) -> LLMClient
+
+Create LLM client for character phases (1, 4).
+
+Uses `_char_entities` for entity storage.
+
+### _create_loc_llm_client(config: PhaseConfig) -> LLMClient
+
+Create LLM client for location phases (2a, 2b).
+
+Uses `_loc_entities` for entity storage.
+
+### _sync_openai_data(simulation: Simulation) -> None
+
+Copy `_openai` data from entity dicts back to Simulation models.
+
+After phases execute, the entity dicts contain updated `_openai` data (chains and usage). This method copies that data back to the Pydantic models via `__pydantic_extra__` so it can be saved via `model_dump()`.
+
+### _aggregate_simulation_usage(simulation: Simulation) -> None
+
+Sum usage from all entities into `simulation._openai`.
+
+Calculates total usage across all characters and locations:
+```python
+totals = {
+    "total_tokens": 0,
+    "reasoning_tokens": 0,
+    "cached_tokens": 0,
+    "total_requests": 0,
+}
+```
+
+### _accumulate_tick_stats(phase_stats: BatchStats) -> None
+
+Add phase statistics to tick totals (`_tick_stats`).
+
+Called after each LLM-using phase to accumulate batch stats.
+
+### _execute_phases(simulation: Simulation) -> None
+
+Execute all phases sequentially.
+
+Creates separate LLM clients for character and location phases. Logs statistics after each phase. Raises `PhaseError` if any phase returns `success=False`.
 
 ---
 
@@ -153,11 +219,13 @@ Runner does NOT catch phase exceptions. Exceptions propagate to CLI which:
 
 ## Dependencies
 
-- **Standard Library**: asyncio, dataclasses, logging
+- **Standard Library**: asyncio, dataclasses, logging, time, typing (Any, TYPE_CHECKING)
 - **External**: None
 - **Internal**:
-  - config (Config)
+  - config (Config, PhaseConfig)
   - utils.storage (load_simulation, save_simulation, Simulation)
+  - utils.llm (LLMClient, BatchStats)
+  - utils.llm_adapters (OpenAIAdapter)
   - narrators (Narrator protocol)
   - phases (execute_phase1, execute_phase2a, execute_phase2b, execute_phase3, execute_phase4)
 
@@ -212,6 +280,15 @@ except PhaseError as e:
 - test_run_tick_empty_simulation — works with 0 characters
 - test_run_tick_increments_tick_number — current_tick incremented
 
+**_sync_openai_data Tests (TestSyncOpenaiData):**
+- test_sync_copies_openai_to_characters — copies _openai from entity dicts to character models
+- test_sync_copies_openai_to_locations — copies _openai from entity dicts to location models
+- test_sync_creates_extra_if_none — creates __pydantic_extra__ if not present
+
+**_aggregate_simulation_usage Tests (TestAggregateSimulationUsage):**
+- test_aggregate_sums_all_entities — sums usage from all characters and locations
+- test_aggregate_creates_extra_if_none — creates __pydantic_extra__ if not present
+
 ### Integration Tests
 
 - test_run_tick_with_stubs — full tick with stub phases
@@ -233,6 +310,20 @@ If narrator fails (e.g., Telegram API error), it's logged but doesn't affect tic
 
 ### Logging
 
-- DEBUG: phase start/end times, tick timing
-- INFO: tick completed successfully
+**Per-Phase Logging (INFO):**
+```
+🎭 phase1: Complete (5 chars, 1,234 tokens, 456 reasoning)
+⚖️ phase2a: Complete (3 locs, 2,345 tokens, 789 reasoning)
+📖 phase2b: Complete (3 narratives, stub)
+⚡ phase3: Complete (results applied)
+🧠 phase4: Complete (5 chars, 987 tokens, 321 reasoning)
+```
+
+**Tick Completion (INFO):**
+```
+🎬 runner: Tick 42 complete (3.2s, 4,566 tokens, 1,566 reasoning)
+```
+
+- DEBUG: phase start/end times, tick timing, entity dict creation
+- INFO: phase completion with stats, tick completion with stats
 - ERROR: phase failures, storage errors

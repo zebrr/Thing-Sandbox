@@ -22,7 +22,7 @@ class LLMClient:
         entities: list[dict],
         default_depth: int = 0,
     ) -> None
-    
+
     async def create_response(
         self,
         instructions: str,
@@ -30,11 +30,13 @@ class LLMClient:
         schema: type[T],
         entity_key: str | None = None,
     ) -> T
-    
+
     async def create_batch(
         self,
         requests: list[LLMRequest],
     ) -> list[T | LLMError]
+
+    def get_last_batch_stats(self) -> BatchStats
 ```
 
 #### LLMClient.\_\_init\_\_(adapter, entities, default_depth) -> None
@@ -85,6 +87,40 @@ Batch of parallel requests.
   3. Convert exceptions to LLMError instances in result list
   4. Log warning if rate limit hits occurred
 - **Note**: Retry happens inside adapter for each request. LLMError in result means all attempts exhausted.
+
+#### LLMClient.get_last_batch_stats() -> BatchStats
+
+Get statistics from the last create_batch() or create_response() call.
+
+- **Returns**: BatchStats with token counts and request statistics
+- **Behavior**:
+  - Returns stats accumulated during the last create_batch() or create_response() call
+  - Stats are reset at the start of each new call
+  - Used by Runner for phase-level logging
+
+---
+
+### BatchStats
+
+Statistics for the last batch execution.
+
+```python
+@dataclass
+class BatchStats:
+    total_tokens: int = 0
+    reasoning_tokens: int = 0
+    cached_tokens: int = 0
+    request_count: int = 0
+    success_count: int = 0
+    error_count: int = 0
+```
+
+- **total_tokens** — total tokens used (input + output)
+- **reasoning_tokens** — reasoning tokens (from o1-series models)
+- **cached_tokens** — tokens served from cache
+- **request_count** — total number of requests
+- **success_count** — successful requests
+- **error_count** — failed requests
 
 ---
 
@@ -188,8 +224,9 @@ Chains stored in entity's `_openai` namespace:
     "intention_chain": ["resp_abc123", "resp_def456"],
     "memory_chain": ["resp_xyz789"],
     "usage": {
-      "total_input_tokens": 125000,
-      "total_output_tokens": 8500,
+      "total_tokens": 133500,
+      "reasoning_tokens": 45000,
+      "cached_tokens": 32000,
       "total_requests": 42
     }
   }
@@ -269,20 +306,22 @@ def _accumulate_usage(self, entity_key: str, usage: ResponseUsage) -> None:
     entity = self.chain_manager.entities.get(entity_id)
     if not entity:
         return
-    
+
     if "_openai" not in entity:
         entity["_openai"] = {}
-    
+
     if "usage" not in entity["_openai"]:
         entity["_openai"]["usage"] = {
-            "total_input_tokens": 0,
-            "total_output_tokens": 0,
+            "total_tokens": 0,
+            "reasoning_tokens": 0,
+            "cached_tokens": 0,
             "total_requests": 0,
         }
-    
+
     stats = entity["_openai"]["usage"]
-    stats["total_input_tokens"] += usage.input_tokens
-    stats["total_output_tokens"] += usage.output_tokens
+    stats["total_tokens"] += usage.total_tokens
+    stats["reasoning_tokens"] += usage.reasoning_tokens
+    stats["cached_tokens"] += usage.cached_tokens
     stats["total_requests"] += 1
 ```
 

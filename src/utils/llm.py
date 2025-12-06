@@ -71,6 +71,28 @@ class LLMRequest:
     depth_override: int | None = None
 
 
+@dataclass
+class BatchStats:
+    """Statistics for the last batch execution.
+
+    Tracks token usage and request counts for logging and monitoring.
+    Reset at the start of each create_batch() or create_response() call.
+
+    Example:
+        >>> client = LLMClient(adapter, entities, default_depth=0)
+        >>> await client.create_batch(requests)
+        >>> stats = client.get_last_batch_stats()
+        >>> print(f"Used {stats.total_tokens:,} tokens")
+    """
+
+    total_tokens: int = 0
+    reasoning_tokens: int = 0
+    cached_tokens: int = 0
+    request_count: int = 0
+    success_count: int = 0
+    error_count: int = 0
+
+
 class ResponseChainManager:
     """Manages response chains stored in entities.
 
@@ -243,6 +265,7 @@ class LLMClient:
         self.adapter = adapter
         self.chain_manager = ResponseChainManager(entities)
         self.default_depth = default_depth
+        self._last_batch_stats = BatchStats()
 
     async def create_response(
         self,
@@ -271,6 +294,9 @@ class LLMClient:
         """
         logger.debug("Executing single request for %s", entity_key or "standalone")
 
+        # Reset batch stats for this request
+        self._last_batch_stats = BatchStats()
+
         # Get previous_response_id from chain if entity_key provided
         previous_id: str | None = None
         if entity_key:
@@ -284,6 +310,13 @@ class LLMClient:
             previous_response_id=previous_id,
         )
 
+        # Record batch stats for this single request
+        self._last_batch_stats.total_tokens = response.usage.total_tokens
+        self._last_batch_stats.reasoning_tokens = response.usage.reasoning_tokens
+        self._last_batch_stats.cached_tokens = response.usage.cached_tokens
+        self._last_batch_stats.request_count = 1
+        self._last_batch_stats.success_count = 1
+
         # Auto-confirm with default_depth
         if entity_key:
             evicted = self.chain_manager.confirm(
@@ -292,7 +325,7 @@ class LLMClient:
             if evicted:
                 await self.adapter.delete_response(evicted)
 
-            # Accumulate usage
+            # Accumulate usage in entity
             self._accumulate_usage(entity_key, response.usage)
 
         return response.parsed
@@ -319,6 +352,9 @@ class LLMClient:
             Successful requests return schema instances.
             Failed requests return LLMError instances.
         """
+        # Reset batch stats at start
+        self._last_batch_stats = BatchStats()
+
         if not requests:
             return []
 
@@ -350,13 +386,26 @@ class LLMClient:
         if request.entity_key:
             previous_id = self.chain_manager.get_previous(request.entity_key)
 
-        # Execute via adapter
-        response = await self.adapter.execute(
-            instructions=request.instructions,
-            input_data=request.input_data,
-            schema=request.schema,
-            previous_response_id=previous_id,
-        )
+        try:
+            # Execute via adapter
+            response = await self.adapter.execute(
+                instructions=request.instructions,
+                input_data=request.input_data,
+                schema=request.schema,
+                previous_response_id=previous_id,
+            )
+        except Exception:
+            # Track error in batch stats
+            self._last_batch_stats.request_count += 1
+            self._last_batch_stats.error_count += 1
+            raise
+
+        # Track success in batch stats
+        self._last_batch_stats.total_tokens += response.usage.total_tokens
+        self._last_batch_stats.reasoning_tokens += response.usage.reasoning_tokens
+        self._last_batch_stats.cached_tokens += response.usage.cached_tokens
+        self._last_batch_stats.request_count += 1
+        self._last_batch_stats.success_count += 1
 
         # Auto-confirm with appropriate depth
         if request.entity_key:
@@ -367,7 +416,7 @@ class LLMClient:
             if evicted:
                 await self.adapter.delete_response(evicted)
 
-            # Accumulate usage
+            # Accumulate usage in entity
             self._accumulate_usage(request.entity_key, response.usage)
 
         return response
@@ -376,7 +425,7 @@ class LLMClient:
         """Add usage stats to entity["_openai"]["usage"].
 
         Creates sections if missing. Increments counters for
-        total_input_tokens, total_output_tokens, total_requests.
+        total_tokens, reasoning_tokens, cached_tokens, total_requests.
 
         Args:
             entity_key: Entity key like "intention:bob".
@@ -392,14 +441,16 @@ class LLMClient:
 
         if "usage" not in entity["_openai"]:
             entity["_openai"]["usage"] = {
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
+                "total_tokens": 0,
+                "reasoning_tokens": 0,
+                "cached_tokens": 0,
                 "total_requests": 0,
             }
 
         stats = entity["_openai"]["usage"]
-        stats["total_input_tokens"] += usage.input_tokens
-        stats["total_output_tokens"] += usage.output_tokens
+        stats["total_tokens"] += usage.total_tokens
+        stats["reasoning_tokens"] += usage.reasoning_tokens
+        stats["cached_tokens"] += usage.cached_tokens
         stats["total_requests"] += 1
 
     def _process_result(
@@ -421,3 +472,19 @@ class LLMClient:
                 return result
             return LLMError(f"Unexpected error: {result}")
         return result.parsed
+
+    def get_last_batch_stats(self) -> BatchStats:
+        """Get statistics from the last create_batch() or create_response() call.
+
+        Returns batch-level statistics for logging and monitoring.
+        Stats are reset at the start of each create_batch() or create_response() call.
+
+        Returns:
+            BatchStats with token counts and request statistics.
+
+        Example:
+            >>> await client.create_batch(requests)
+            >>> stats = client.get_last_batch_stats()
+            >>> logger.info("Used %d tokens", stats.total_tokens)
+        """
+        return self._last_batch_stats

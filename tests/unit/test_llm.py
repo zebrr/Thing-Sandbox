@@ -446,8 +446,9 @@ class TestLLMClientCreateResponse:
         )
 
         usage = entities[0]["_openai"]["usage"]
-        assert usage["total_input_tokens"] == 100
-        assert usage["total_output_tokens"] == 50
+        assert usage["total_tokens"] == 150  # input + output
+        assert usage["reasoning_tokens"] == 0
+        assert usage["cached_tokens"] == 0
         assert usage["total_requests"] == 1
 
     @pytest.mark.asyncio
@@ -779,8 +780,8 @@ class TestLLMClientCreateBatch:
         alice_usage = entities[0]["_openai"]["usage"]
         bob_usage = entities[1]["_openai"]["usage"]
 
-        assert alice_usage["total_input_tokens"] == 100
-        assert bob_usage["total_input_tokens"] == 200
+        assert alice_usage["total_tokens"] == 150  # 100 + 50
+        assert bob_usage["total_tokens"] == 300  # 200 + 100
 
     @pytest.mark.asyncio
     async def test_batch_wraps_unexpected_exceptions(self, mock_adapter: MagicMock) -> None:
@@ -860,8 +861,9 @@ class TestUsageAccumulation:
         )
 
         usage = entities[0]["_openai"]["usage"]
-        assert usage["total_input_tokens"] == 150
-        assert usage["total_output_tokens"] == 75
+        assert usage["total_tokens"] == 225  # 150 + 75
+        assert usage["reasoning_tokens"] == 0
+        assert usage["cached_tokens"] == 0
         assert usage["total_requests"] == 1
 
     @pytest.mark.asyncio
@@ -888,8 +890,7 @@ class TestUsageAccumulation:
         )
 
         usage = entities[0]["_openai"]["usage"]
-        assert usage["total_input_tokens"] == 300
-        assert usage["total_output_tokens"] == 150
+        assert usage["total_tokens"] == 450  # (100+50) + (200+100)
         assert usage["total_requests"] == 2
 
 
@@ -934,3 +935,117 @@ class TestLLMRequest:
         )
 
         assert request.schema is ComplexResponse
+
+
+# =============================================================================
+# BatchStats Tests
+# =============================================================================
+
+
+class TestBatchStats:
+    """Tests for BatchStats dataclass and get_last_batch_stats()."""
+
+    @pytest.mark.asyncio
+    async def test_get_last_batch_stats_after_batch(self, mock_adapter: MagicMock) -> None:
+        """Batch stats are correct after create_batch()."""
+        mock_adapter.execute.side_effect = [
+            make_adapter_response(input_tokens=100, output_tokens=50),
+            make_adapter_response(input_tokens=200, output_tokens=100),
+        ]
+        client = LLMClient(mock_adapter, [], default_depth=0)
+
+        requests = [
+            LLMRequest(instructions="A", input_data="A", schema=SimpleAnswer),
+            LLMRequest(instructions="B", input_data="B", schema=SimpleAnswer),
+        ]
+
+        await client.create_batch(requests)
+
+        stats = client.get_last_batch_stats()
+        assert stats.total_tokens == 450  # (100+50) + (200+100)
+        assert stats.reasoning_tokens == 0
+        assert stats.cached_tokens == 0
+        assert stats.request_count == 2
+        assert stats.success_count == 2
+        assert stats.error_count == 0
+
+    @pytest.mark.asyncio
+    async def test_get_last_batch_stats_after_single(self, mock_adapter: MagicMock) -> None:
+        """Batch stats are correct after create_response()."""
+        mock_adapter.execute.return_value = make_adapter_response(
+            input_tokens=100, output_tokens=50
+        )
+        client = LLMClient(mock_adapter, [], default_depth=0)
+
+        await client.create_response(
+            instructions="Test",
+            input_data="Test",
+            schema=SimpleAnswer,
+        )
+
+        stats = client.get_last_batch_stats()
+        assert stats.total_tokens == 150
+        assert stats.request_count == 1
+        assert stats.success_count == 1
+        assert stats.error_count == 0
+
+    @pytest.mark.asyncio
+    async def test_get_last_batch_stats_with_errors(self, mock_adapter: MagicMock) -> None:
+        """Error count is tracked in batch stats."""
+        mock_adapter.execute.side_effect = [
+            make_adapter_response(input_tokens=100, output_tokens=50),
+            LLMTimeoutError("Timeout"),
+        ]
+        client = LLMClient(mock_adapter, [], default_depth=0)
+
+        requests = [
+            LLMRequest(instructions="A", input_data="A", schema=SimpleAnswer),
+            LLMRequest(instructions="B", input_data="B", schema=SimpleAnswer),
+        ]
+
+        await client.create_batch(requests)
+
+        stats = client.get_last_batch_stats()
+        assert stats.total_tokens == 150  # Only successful request counted
+        assert stats.request_count == 2
+        assert stats.success_count == 1
+        assert stats.error_count == 1
+
+    @pytest.mark.asyncio
+    async def test_batch_stats_reset_between_calls(self, mock_adapter: MagicMock) -> None:
+        """Stats are reset at start of each create_batch() call."""
+        mock_adapter.execute.side_effect = [
+            make_adapter_response(input_tokens=100, output_tokens=50),
+            make_adapter_response(input_tokens=200, output_tokens=100),
+        ]
+        client = LLMClient(mock_adapter, [], default_depth=0)
+
+        # First batch
+        await client.create_batch(
+            [
+                LLMRequest(instructions="A", input_data="A", schema=SimpleAnswer),
+            ]
+        )
+        stats1 = client.get_last_batch_stats()
+        assert stats1.total_tokens == 150
+
+        # Second batch - stats should be reset, not accumulated
+        await client.create_batch(
+            [
+                LLMRequest(instructions="B", input_data="B", schema=SimpleAnswer),
+            ]
+        )
+        stats2 = client.get_last_batch_stats()
+        assert stats2.total_tokens == 300  # Only second batch, not 150+300
+
+    def test_batch_stats_defaults(self) -> None:
+        """BatchStats has correct default values."""
+        from src.utils.llm import BatchStats
+
+        stats = BatchStats()
+        assert stats.total_tokens == 0
+        assert stats.reasoning_tokens == 0
+        assert stats.cached_tokens == 0
+        assert stats.request_count == 0
+        assert stats.success_count == 0
+        assert stats.error_count == 0

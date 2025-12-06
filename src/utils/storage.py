@@ -18,7 +18,7 @@ import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -430,12 +430,15 @@ def save_simulation(path: Path, simulation: Simulation) -> None:
 
     # Save simulation.json (metadata only, without characters/locations)
     sim_file = path / "simulation.json"
-    sim_data = {
+    sim_data: dict[str, Any] = {
         "id": simulation.id,
         "current_tick": simulation.current_tick,
         "created_at": simulation.created_at.isoformat(),
         "status": simulation.status,
     }
+    # Include extra fields (like _openai) if present
+    if simulation.__pydantic_extra__:
+        sim_data.update(simulation.__pydantic_extra__)
 
     try:
         with open(sim_file, "w", encoding="utf-8") as f:

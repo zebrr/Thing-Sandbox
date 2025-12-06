@@ -551,5 +551,6 @@ YYYY.MM.DD HH:MM:SS | LEVEL   | 🏷️ module: message
 
 - Документ обновляется по мере развития проекта
 - Детали работы с LLM: [Thing' Sandbox LLM Approach v2.md](Thing'%20Sandbox%20LLM%20Approach%20v2.md)
+- Статистика использования LLM: [Thing' Sandbox LLM Usage Tracking.md](Thing'%20Sandbox%20LLM%20Usage%20Tracking.md)
 - Детали работы промптами: [Thing' Sandbox LLM Prompting.md](Thing'%20Sandbox%20LLM%20Prompting.md)
 - Спецификации модулей: `docs/specs/`

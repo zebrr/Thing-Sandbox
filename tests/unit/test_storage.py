@@ -646,3 +646,57 @@ class TestResetSimulation:
         logs_path = target_path / "logs"
         assert logs_path.exists()
         assert logs_path.is_dir()
+
+
+class TestOpenaiRoundtrip:
+    """Tests for _openai data preservation through roundtrip."""
+
+    def test_roundtrip_preserves_openai_character(self, tmp_path: Path) -> None:
+        """_openai data on character survives save/load cycle."""
+        sim_path = create_test_simulation(tmp_path)
+
+        # Load, add _openai via __pydantic_extra__, save
+        sim = load_simulation(sim_path)
+        bob = sim.characters["bob"]
+        if bob.__pydantic_extra__ is None:
+            object.__setattr__(bob, "__pydantic_extra__", {})
+        bob.__pydantic_extra__["_openai"] = {
+            "usage": {
+                "total_tokens": 1000,
+                "reasoning_tokens": 500,
+                "cached_tokens": 100,
+                "total_requests": 10,
+            },
+            "intention_chain": ["resp_001", "resp_002"],
+        }
+        save_simulation(sim_path, sim)
+
+        # Reload and verify
+        sim2 = load_simulation(sim_path)
+        bob_openai = sim2.characters["bob"].model_extra.get("_openai")
+        assert bob_openai is not None
+        assert bob_openai["usage"]["total_tokens"] == 1000
+        assert bob_openai["intention_chain"] == ["resp_001", "resp_002"]
+
+    def test_roundtrip_preserves_openai_simulation(self, tmp_path: Path) -> None:
+        """_openai data on simulation survives save/load cycle."""
+        sim_path = create_test_simulation(tmp_path)
+
+        # Load, add _openai via __pydantic_extra__, save
+        sim = load_simulation(sim_path)
+        if sim.__pydantic_extra__ is None:
+            object.__setattr__(sim, "__pydantic_extra__", {})
+        sim.__pydantic_extra__["_openai"] = {
+            "total_tokens": 5000,
+            "reasoning_tokens": 2000,
+            "cached_tokens": 500,
+            "total_requests": 25,
+        }
+        save_simulation(sim_path, sim)
+
+        # Reload and verify
+        sim2 = load_simulation(sim_path)
+        sim_openai = sim2.model_extra.get("_openai")
+        assert sim_openai is not None
+        assert sim_openai["total_tokens"] == 5000
+        assert sim_openai["total_requests"] == 25

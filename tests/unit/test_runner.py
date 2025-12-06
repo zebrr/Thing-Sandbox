@@ -470,3 +470,127 @@ class TestTickRunner:
         sim_json = json.loads((sim_path / "simulation.json").read_text(encoding="utf-8"))
         assert sim_json["current_tick"] == 0
         assert sim_json["status"] == "paused"
+
+
+class TestSyncOpenaiData:
+    """Tests for _sync_openai_data method."""
+
+    def test_sync_openai_data_characters(
+        self, mock_config: Config, sample_simulation: Simulation
+    ) -> None:
+        """Syncs _openai data from entity dicts to character models."""
+        runner = TickRunner(mock_config, [])
+
+        # Create entity dicts with _openai data
+        runner._char_entities = [
+            {
+                "identity": {"id": "bob"},
+                "state": {},
+                "_openai": {
+                    "usage": {
+                        "total_tokens": 1000,
+                        "reasoning_tokens": 500,
+                        "cached_tokens": 200,
+                        "total_requests": 10,
+                    }
+                },
+            }
+        ]
+        runner._loc_entities = []
+
+        runner._sync_openai_data(sample_simulation)
+
+        # Check data was synced to character via __pydantic_extra__
+        char = sample_simulation.characters["bob"]
+        char_openai = (char.__pydantic_extra__ or {}).get("_openai")
+        assert char_openai is not None
+        assert char_openai["usage"]["total_tokens"] == 1000
+
+    def test_sync_openai_data_locations(
+        self, mock_config: Config, sample_simulation: Simulation
+    ) -> None:
+        """Syncs _openai data from entity dicts to location models."""
+        runner = TickRunner(mock_config, [])
+
+        runner._char_entities = []
+        runner._loc_entities = [
+            {
+                "identity": {"id": "tavern"},
+                "state": {},
+                "_openai": {
+                    "usage": {
+                        "total_tokens": 2000,
+                        "reasoning_tokens": 1000,
+                        "cached_tokens": 0,
+                        "total_requests": 5,
+                    }
+                },
+            }
+        ]
+
+        runner._sync_openai_data(sample_simulation)
+
+        # Check data was synced to location via __pydantic_extra__
+        loc = sample_simulation.locations["tavern"]
+        loc_openai = (loc.__pydantic_extra__ or {}).get("_openai")
+        assert loc_openai is not None
+        assert loc_openai["usage"]["total_tokens"] == 2000
+
+
+class TestAggregateSimulationUsage:
+    """Tests for _aggregate_simulation_usage method."""
+
+    def test_aggregate_simulation_usage(
+        self, mock_config: Config, sample_simulation: Simulation
+    ) -> None:
+        """Aggregates usage from all entities into simulation._openai."""
+        runner = TickRunner(mock_config, [])
+
+        # Set up _openai data on entities via __pydantic_extra__
+        bob = sample_simulation.characters["bob"]
+        if bob.__pydantic_extra__ is None:
+            object.__setattr__(bob, "__pydantic_extra__", {})
+        bob.__pydantic_extra__["_openai"] = {
+            "usage": {
+                "total_tokens": 1000,
+                "reasoning_tokens": 500,
+                "cached_tokens": 100,
+                "total_requests": 10,
+            }
+        }
+
+        tavern = sample_simulation.locations["tavern"]
+        if tavern.__pydantic_extra__ is None:
+            object.__setattr__(tavern, "__pydantic_extra__", {})
+        tavern.__pydantic_extra__["_openai"] = {
+            "usage": {
+                "total_tokens": 2000,
+                "reasoning_tokens": 1000,
+                "cached_tokens": 200,
+                "total_requests": 5,
+            }
+        }
+
+        runner._aggregate_simulation_usage(sample_simulation)
+
+        # Check aggregated totals via __pydantic_extra__
+        sim_openai = (sample_simulation.__pydantic_extra__ or {}).get("_openai")
+        assert sim_openai is not None
+        assert sim_openai["total_tokens"] == 3000
+        assert sim_openai["reasoning_tokens"] == 1500
+        assert sim_openai["cached_tokens"] == 300
+        assert sim_openai["total_requests"] == 15
+
+    def test_aggregate_empty_entities(
+        self, mock_config: Config, sample_simulation: Simulation
+    ) -> None:
+        """Works with entities that have no _openai data."""
+        runner = TickRunner(mock_config, [])
+
+        # No _openai data on any entity
+        runner._aggregate_simulation_usage(sample_simulation)
+
+        sim_openai = (sample_simulation.__pydantic_extra__ or {}).get("_openai")
+        assert sim_openai is not None
+        assert sim_openai["total_tokens"] == 0
+        assert sim_openai["total_requests"] == 0
