@@ -137,14 +137,15 @@ async def test_update_character_location(simple_sim: Simulation, config: Config)
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="forest",  # Move to forest
                     internal_state="excited",
                     external_intent="explore",
                     memory_entry="I left the tavern",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -161,14 +162,15 @@ async def test_update_character_internal_state(simple_sim: Simulation, config: C
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="очень взволнован",  # Cyrillic
                     external_intent="rest",
                     memory_entry="Something happened",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -185,14 +187,15 @@ async def test_update_character_external_intent(simple_sim: Simulation, config: 
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="calm",
                     external_intent="fight the dragon",
                     memory_entry="I decided to fight",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -209,27 +212,29 @@ async def test_update_multiple_characters(multi_sim: Simulation, config: Config)
         "tavern": MasterOutput(
             tick=10,
             location_id="tavern",
-            characters={
-                "alice": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="alice",
                     location="tavern",
                     internal_state="happy",
                     external_intent="drink",
                     memory_entry="I ordered ale",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
         "forest": MasterOutput(
             tick=10,
             location_id="forest",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="forest",
                     internal_state="scared",
                     external_intent="run",
                     memory_entry="I saw a wolf",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -252,14 +257,15 @@ async def test_update_location_moment(simple_sim: Simulation, config: Config) ->
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="calm",
                     external_intent="rest",
                     memory_entry="Time passed",
                 ),
-            },
+            ],
             location=LocationUpdate(moment="Midnight, silence"),
         ),
     }
@@ -278,14 +284,15 @@ async def test_update_location_moment_null(simple_sim: Simulation, config: Confi
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="calm",
                     external_intent="rest",
                     memory_entry="Nothing changed",
                 ),
-            },
+            ],
             location=LocationUpdate(moment=None),  # Explicit None
         ),
     }
@@ -302,14 +309,15 @@ async def test_update_location_description(simple_sim: Simulation, config: Confi
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="calm",
                     external_intent="rest",
                     memory_entry="The place changed",
                 ),
-            },
+            ],
             location=LocationUpdate(description="A burned-down tavern"),
         ),
     }
@@ -328,14 +336,15 @@ async def test_update_location_description_null(simple_sim: Simulation, config: 
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="calm",
                     external_intent="rest",
                     memory_entry="Normal day",
                 ),
-            },
+            ],
             location=LocationUpdate(description=None),
         ),
     }
@@ -357,27 +366,29 @@ async def test_collect_memory_entries(multi_sim: Simulation, config: Config) -> 
         "tavern": MasterOutput(
             tick=10,
             location_id="tavern",
-            characters={
-                "alice": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="alice",
                     location="tavern",
                     internal_state="happy",
                     external_intent="drink",
                     memory_entry="Я заказала эль",  # Cyrillic
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
         "forest": MasterOutput(
             tick=10,
             location_id="forest",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="forest",
                     internal_state="scared",
                     external_intent="run",
                     memory_entry="I saw a wolf",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -397,14 +408,15 @@ async def test_memory_entries_match_characters(simple_sim: Simulation, config: C
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="calm",
                     external_intent="rest",
                     memory_entry="Specific memory for Bob",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -427,7 +439,7 @@ async def test_invalid_location_id_skipped(simple_sim: Simulation, config: Confi
         "mars": MasterOutput(  # Unknown location
             tick=5,
             location_id="mars",
-            characters={},
+            characters=[],
             location=LocationUpdate(),
         ),
     }
@@ -445,14 +457,15 @@ async def test_invalid_char_id_skipped(simple_sim: Simulation, config: Config) -
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "ghost": CharacterUpdate(  # Unknown character
+            characters=[
+                CharacterUpdate(
+                    character_id="ghost",  # Unknown character
                     location="tavern",
                     internal_state="spooky",
                     external_intent="haunt",
                     memory_entry="Boo!",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -474,14 +487,15 @@ async def test_invalid_target_location_keeps_current(
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="nowhere",  # Invalid target
                     internal_state="confused",
                     external_intent="find way",
                     memory_entry="I tried to go somewhere",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -500,7 +514,7 @@ async def test_fallback_logs_warning(simple_sim: Simulation, config: Config) -> 
         "unknown_location": MasterOutput(
             tick=5,
             location_id="unknown_location",
-            characters={},
+            characters=[],
             location=LocationUpdate(),
         ),
     }
@@ -531,7 +545,7 @@ async def test_empty_characters_in_location(simple_sim: Simulation, config: Conf
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={},  # No character updates
+            characters=[],  # No character updates
             location=LocationUpdate(moment="New moment"),
         ),
     }
@@ -549,14 +563,15 @@ async def test_single_location_single_character(simple_sim: Simulation, config: 
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="new_state",
                     external_intent="new_intent",
                     memory_entry="new_memory",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -575,27 +590,29 @@ async def test_multiple_locations(multi_sim: Simulation, config: Config) -> None
         "tavern": MasterOutput(
             tick=10,
             location_id="tavern",
-            characters={
-                "alice": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="alice",
                     location="tavern",
                     internal_state="state_a",
                     external_intent="intent_a",
                     memory_entry="memory_a",
                 ),
-            },
+            ],
             location=LocationUpdate(moment="Tavern moment"),
         ),
         "forest": MasterOutput(
             tick=10,
             location_id="forest",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="forest",
                     internal_state="state_b",
                     external_intent="intent_b",
                     memory_entry="memory_b",
                 ),
-            },
+            ],
             location=LocationUpdate(moment="Forest moment"),
         ),
     }
@@ -619,14 +636,15 @@ async def test_result_success_always_true(simple_sim: Simulation, config: Config
         "invalid_location": MasterOutput(
             tick=5,
             location_id="invalid_location",
-            characters={
-                "ghost": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="ghost",
                     location="nowhere",
                     internal_state="x",
                     external_intent="y",
                     memory_entry="z",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -643,14 +661,15 @@ async def test_result_data_has_pending_memories(simple_sim: Simulation, config: 
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="x",
                     external_intent="y",
                     memory_entry="z",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -667,14 +686,15 @@ async def test_result_pending_memories_type(simple_sim: Simulation, config: Conf
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="x",
                     external_intent="y",
                     memory_entry="test_memory",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -702,14 +722,15 @@ async def test_simulation_mutated_in_place(simple_sim: Simulation, config: Confi
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="mutated_state",
                     external_intent="x",
                     memory_entry="y",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -729,20 +750,22 @@ async def test_no_new_characters_created(simple_sim: Simulation, config: Config)
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="x",
                     external_intent="y",
                     memory_entry="z",
                 ),
-                "ghost": CharacterUpdate(  # Unknown - should be skipped
+                CharacterUpdate(
+                    character_id="ghost",  # Unknown - should be skipped
                     location="tavern",
                     internal_state="a",
                     external_intent="b",
                     memory_entry="c",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
     }
@@ -762,20 +785,21 @@ async def test_no_new_locations_created(simple_sim: Simulation, config: Config) 
         "tavern": MasterOutput(
             tick=5,
             location_id="tavern",
-            characters={
-                "bob": CharacterUpdate(
+            characters=[
+                CharacterUpdate(
+                    character_id="bob",
                     location="tavern",
                     internal_state="x",
                     external_intent="y",
                     memory_entry="z",
                 ),
-            },
+            ],
             location=LocationUpdate(),
         ),
         "mars": MasterOutput(  # Unknown - should be skipped
             tick=5,
             location_id="mars",
-            characters={},
+            characters=[],
             location=LocationUpdate(moment="Red dust"),
         ),
     }

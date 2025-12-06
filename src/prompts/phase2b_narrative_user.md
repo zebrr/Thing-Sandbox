@@ -28,7 +28,7 @@
 
 **Intended:** {{ intentions[char.identity.id] | default("No intention.") }}
 
-{% set result = master_result.characters[char.identity.id] %}
+{% set result = master_result.characters_dict[char.identity.id] %}
 {% if result %}
 **After Game Master's resolution:** {{ result.internal_state }} / {{ result.external_intent }}
 {% if result.location != char.state.location %}

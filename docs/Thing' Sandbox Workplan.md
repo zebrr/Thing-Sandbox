@@ -557,6 +557,7 @@ user = renderer.render("phase1_intention_user", {
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 10 — Graceful Degradation)
+- Usage Tracking: `docs/Thing' Sandbox LLM Usage Tracking.md`
 - Схема ответа: `src/schemas/IntentionResponse.schema.json`
 
 **Входные требования:**
@@ -671,6 +672,7 @@ user = renderer.render("phase1_intention_user", {
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 10 — Graceful Degradation)
+- Usage Tracking: `docs/Thing' Sandbox LLM Usage Tracking.md`
 - Схема арбитра: `src/schemas/Master.schema.json`
 - Схема нарратива: `src/schemas/NarrativeResponse.schema.json`
 
@@ -753,6 +755,7 @@ user = renderer.render("phase1_intention_user", {
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 10 — Graceful Degradation)
+- Usage Tracking: `docs/Thing' Sandbox LLM Usage Tracking.md`
 - Схема ответа: `src/schemas/SummaryResponse.schema.json`
 
 **Входные требования:**

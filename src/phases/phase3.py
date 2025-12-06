@@ -69,7 +69,7 @@ async def execute(
             logger.debug("Phase 3: updated description for location '%s'", location_id)
 
         # Apply character updates
-        for char_id, char_update in master_output.characters.items():
+        for char_id, char_update in master_output.characters_dict.items():
             # Validate character exists
             if char_id not in simulation.characters:
                 logger.warning(

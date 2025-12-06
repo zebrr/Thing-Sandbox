@@ -12,8 +12,6 @@ from src.phases import (
     LocationUpdate,
     MasterOutput,
     execute_phase1,
-    execute_phase2a,
-    execute_phase2b,
     execute_phase3,
     execute_phase4,
 )
@@ -150,47 +148,31 @@ async def test_phase1_returns_intentions_for_all_characters(
 
 
 @pytest.mark.asyncio
-async def test_phase2a_returns_master_for_all_locations(
-    demo_sim: Simulation, config: Config
-) -> None:
-    """Phase 2a stub returns Master output for each location."""
-    result = await execute_phase2a(demo_sim, config, None)  # type: ignore[arg-type]
-
-    assert result.success is True
-    assert isinstance(result.data, dict)
-
-    # Should have result for each location
-    for loc_id in demo_sim.locations:
-        assert loc_id in result.data
-        assert isinstance(result.data[loc_id], MasterOutput)
-        assert result.data[loc_id].location_id == loc_id
-        assert isinstance(result.data[loc_id].characters, dict)
-        assert isinstance(result.data[loc_id].location, LocationUpdate)
-
-
-@pytest.mark.asyncio
-async def test_phase2b_returns_narratives_for_all_locations(
-    demo_sim: Simulation, config: Config
-) -> None:
-    """Phase 2b stub returns narrative for each location."""
-    result = await execute_phase2b(demo_sim, config, None)  # type: ignore[arg-type]
-
-    assert result.success is True
-    assert isinstance(result.data, dict)
-
-    for loc_id in demo_sim.locations:
-        assert loc_id in result.data
-        assert "narrative" in result.data[loc_id]
-        assert "[Stub]" in result.data[loc_id]["narrative"]
-
-
-@pytest.mark.asyncio
 async def test_phase3_applies_results(demo_sim: Simulation, config: Config) -> None:
     """Phase 3 applies master_results and returns pending_memories."""
-    # First run phase2a to get master_results
-    result2a = await execute_phase2a(demo_sim, config, None)  # type: ignore[arg-type]
+    # Create mock master_results instead of calling phase2a
+    master_results: dict[str, MasterOutput] = {}
+    for loc_id in demo_sim.locations:
+        char_updates: list[CharacterUpdate] = []
+        for char_id, char in demo_sim.characters.items():
+            if char.state.location == loc_id:
+                char_updates.append(
+                    CharacterUpdate(
+                        character_id=char_id,
+                        location=loc_id,
+                        internal_state=char.state.internal_state or "",
+                        external_intent=char.state.external_intent or "",
+                        memory_entry=f"Test memory for {char_id}",
+                    )
+                )
+        master_results[loc_id] = MasterOutput(
+            tick=demo_sim.current_tick,
+            location_id=loc_id,
+            characters=char_updates,
+            location=LocationUpdate(),
+        )
 
-    result = await execute_phase3(demo_sim, config, result2a.data)
+    result = await execute_phase3(demo_sim, config, master_results)
 
     assert result.success is True
     assert result.data is not None
@@ -225,73 +207,3 @@ async def test_phase1_handles_empty_simulation(
 
     assert result.success is True
     assert result.data == {}
-
-
-@pytest.mark.asyncio
-async def test_phase2a_handles_empty_simulation(empty_sim: Simulation, config: Config) -> None:
-    """Phase 2a handles simulation with no locations."""
-    result = await execute_phase2a(empty_sim, config, None)  # type: ignore[arg-type]
-
-    assert result.success is True
-    assert result.data == {}
-
-
-@pytest.mark.asyncio
-async def test_phase2b_handles_empty_simulation(empty_sim: Simulation, config: Config) -> None:
-    """Phase 2b handles simulation with no locations."""
-    result = await execute_phase2b(empty_sim, config, None)  # type: ignore[arg-type]
-
-    assert result.success is True
-    assert result.data == {}
-
-
-@pytest.mark.asyncio
-async def test_phase2a_includes_characters_in_location(
-    sim_with_chars_in_locations: Simulation, config: Config
-) -> None:
-    """Phase 2a includes character updates for characters in each location."""
-    result = await execute_phase2a(sim_with_chars_in_locations, config, None)  # type: ignore[arg-type]
-
-    assert result.success is True
-
-    # Alice is in tavern
-    tavern_result = result.data["tavern"]
-    assert "alice" in tavern_result.characters
-    assert "bob" not in tavern_result.characters
-    assert isinstance(tavern_result.characters["alice"], CharacterUpdate)
-    assert tavern_result.characters["alice"].location == "tavern"
-
-    # Bob is in forest
-    forest_result = result.data["forest"]
-    assert "bob" in forest_result.characters
-    assert "alice" not in forest_result.characters
-    assert isinstance(forest_result.characters["bob"], CharacterUpdate)
-    assert forest_result.characters["bob"].location == "forest"
-
-
-@pytest.mark.asyncio
-async def test_phase2a_preserves_character_state(
-    sim_with_chars_in_locations: Simulation, config: Config
-) -> None:
-    """Phase 2a preserves existing character internal/external state."""
-    result = await execute_phase2a(sim_with_chars_in_locations, config, None)  # type: ignore[arg-type]
-
-    alice_update = result.data["tavern"].characters["alice"]
-    assert alice_update.internal_state == "feeling curious"
-    assert alice_update.external_intent == "explore the room"
-
-    # Bob has None states, should become empty strings
-    bob_update = result.data["forest"].characters["bob"]
-    assert bob_update.internal_state == ""
-    assert bob_update.external_intent == ""
-
-
-@pytest.mark.asyncio
-async def test_phase2b_uses_location_name_in_narrative(
-    sim_with_chars_in_locations: Simulation, config: Config
-) -> None:
-    """Phase 2b includes location name in narrative text."""
-    result = await execute_phase2b(sim_with_chars_in_locations, config, None)  # type: ignore[arg-type]
-
-    assert "The Rusty Tankard" in result.data["tavern"]["narrative"]
-    assert "Dark Forest" in result.data["forest"]["narrative"]

@@ -240,9 +240,9 @@ class TestTickRunner:
 
         # Mock all phases to succeed
         async def mock_phase1(sim, cfg, client):
-            return PhaseResult(success=True, data={"bob": MagicMock()})
+            return PhaseResult(success=True, data={"bob": MagicMock(intention="test intention")})
 
-        async def mock_phase2a(sim, cfg, client):
+        async def mock_phase2a(sim, cfg, client, intentions):
             return PhaseResult(
                 success=True,
                 data={
@@ -254,11 +254,11 @@ class TestTickRunner:
                 },
             )
 
-        async def mock_phase2b(sim, cfg, client):
+        async def mock_phase2b(sim, cfg, client, master_results, intentions):
             return PhaseResult(
                 success=True,
                 data={
-                    "tavern": {"narrative": "Test narrative."},
+                    "tavern": MagicMock(narrative="Test narrative."),
                 },
             )
 
@@ -313,7 +313,7 @@ class TestTickRunner:
         async def mock_phase1(sim, cfg, client):
             return PhaseResult(success=True, data={})
 
-        async def mock_phase2a_fail(sim, cfg, client):
+        async def mock_phase2a_fail(sim, cfg, client, intentions):
             return PhaseResult(success=False, data=None, error="Arbiter error")
 
         with (
@@ -342,10 +342,10 @@ class TestTickRunner:
         async def mock_phase1(sim, cfg, client):
             return PhaseResult(success=True, data={})
 
-        async def mock_phase2a(sim, cfg, client):
+        async def mock_phase2a(sim, cfg, client, intentions):
             return PhaseResult(success=True, data={})
 
-        async def mock_phase2b(sim, cfg, client):
+        async def mock_phase2b(sim, cfg, client, master_results, intentions):
             return PhaseResult(success=True, data={})
 
         async def mock_phase3(sim, cfg, master_results):
@@ -387,7 +387,13 @@ class TestTickRunner:
                 nonlocal call_count
                 call_count += 1
 
-        async def mock_phase(sim, cfg, client):
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2a(sim, cfg, client, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2b(sim, cfg, client, master_results, intentions):
             return PhaseResult(success=True, data={})
 
         async def mock_phase3(sim, cfg, master_results):
@@ -397,9 +403,9 @@ class TestTickRunner:
             return PhaseResult(success=True, data=None)
 
         with (
-            patch("src.runner.execute_phase1", mock_phase),
-            patch("src.runner.execute_phase2a", mock_phase),
-            patch("src.runner.execute_phase2b", mock_phase),
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a),
+            patch("src.runner.execute_phase2b", mock_phase2b),
             patch("src.runner.execute_phase3", mock_phase3),
             patch("src.runner.execute_phase4", mock_phase4),
             patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
@@ -420,7 +426,13 @@ class TestTickRunner:
         """run_tick increments current_tick and saves to disk."""
         sim_path = create_test_simulation_on_disk(tmp_path)
 
-        async def mock_phase(sim, cfg, client):
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2a(sim, cfg, client, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2b(sim, cfg, client, master_results, intentions):
             return PhaseResult(success=True, data={})
 
         async def mock_phase3(sim, cfg, master_results):
@@ -430,9 +442,9 @@ class TestTickRunner:
             return PhaseResult(success=True, data=None)
 
         with (
-            patch("src.runner.execute_phase1", mock_phase),
-            patch("src.runner.execute_phase2a", mock_phase),
-            patch("src.runner.execute_phase2b", mock_phase),
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a),
+            patch("src.runner.execute_phase2b", mock_phase2b),
             patch("src.runner.execute_phase3", mock_phase3),
             patch("src.runner.execute_phase4", mock_phase4),
             patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),

@@ -9,6 +9,7 @@ from src.phases.phase2a import (
 from src.phases.phase2a import (
     execute as execute_phase2a,
 )
+from src.phases.phase2b import NarrativeResponse
 from src.phases.phase2b import execute as execute_phase2b
 from src.phases.phase3 import execute as execute_phase3
 from src.phases.phase4 import execute as execute_phase4
@@ -17,6 +18,7 @@ __all__ = [
     "CharacterUpdate",
     "LocationUpdate",
     "MasterOutput",
+    "NarrativeResponse",
     "execute_phase1",
     "execute_phase2a",
     "execute_phase2b",

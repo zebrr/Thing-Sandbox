@@ -359,9 +359,12 @@ class TickRunner:
             f"{stats.reasoning_tokens:,}",
         )
 
+        # Extract intention strings for Phase 2a/2b
+        intentions_str = {char_id: resp.intention for char_id, resp in result1.data.items()}
+
         # Phase 2a: Scene resolution (locations)
         loc_client_p2a = self._create_loc_llm_client(self._config.phase2a)
-        result2a = await execute_phase2a(simulation, self._config, loc_client_p2a)
+        result2a = await execute_phase2a(simulation, self._config, loc_client_p2a, intentions_str)
         if not result2a.success:
             raise PhaseError("phase2a", result2a.error or "Unknown error")
 
@@ -374,17 +377,27 @@ class TickRunner:
             f"{stats.reasoning_tokens:,}",
         )
 
-        # Phase 2b: Narrative generation (still stub, passes None)
-        # Infrastructure ready, but phase 2b implementation is a separate task
-        result2b = await execute_phase2b(simulation, self._config, None)  # type: ignore[arg-type]
+        # Phase 2b: Narrative generation (locations)
+        loc_client_p2b = self._create_loc_llm_client(self._config.phase2b)
+        result2b = await execute_phase2b(
+            simulation, self._config, loc_client_p2b, result2a.data, intentions_str
+        )
         if not result2b.success:
             raise PhaseError("phase2b", result2b.error or "Unknown error")
-        logger.info("📖 phase2b: Complete (%d narratives, stub)", len(result2b.data))
+
+        stats = loc_client_p2b.get_last_batch_stats()
+        self._accumulate_tick_stats(stats)
+        logger.info(
+            "📖 phase2b: Complete (%d locs, %s tokens, %s reasoning)",
+            len(simulation.locations),
+            f"{stats.total_tokens:,}",
+            f"{stats.reasoning_tokens:,}",
+        )
 
         # Extract narratives for TickResult
         self._narratives: dict[str, str] = {}
-        for loc_id, data in result2b.data.items():
-            self._narratives[loc_id] = data.get("narrative", "")
+        for loc_id, narrative_resp in result2b.data.items():
+            self._narratives[loc_id] = narrative_resp.narrative
 
         # Phase 3: Apply results (no LLM, pure mechanics)
         result3 = await execute_phase3(simulation, self._config, result2a.data)

@@ -14,8 +14,10 @@ from typer.testing import CliRunner
 from src.cli import app
 from src.config import Config
 from src.narrators import ConsoleNarrator
+from src.phases import CharacterUpdate, LocationUpdate, MasterOutput
 from src.phases.common import PhaseResult
 from src.phases.phase1 import IntentionResponse
+from src.phases.phase2b import NarrativeResponse
 from src.runner import TickRunner
 from src.utils.storage import SimulationNotFoundError, load_simulation
 
@@ -72,6 +74,41 @@ def _mock_phase1_result(simulation):
     return PhaseResult(success=True, data=intentions)
 
 
+def _mock_phase2a_result(simulation):
+    """Create mock Phase 2a result with MasterOutput for all locations."""
+    master_results = {}
+    for loc_id in simulation.locations:
+        char_updates = []
+        for char_id, char in simulation.characters.items():
+            if char.state.location == loc_id:
+                char_updates.append(
+                    CharacterUpdate(
+                        character_id=char_id,
+                        location=loc_id,
+                        internal_state=char.state.internal_state or "",
+                        external_intent=char.state.external_intent or "",
+                        memory_entry=f"[Mock] Memory for {char_id}",
+                    )
+                )
+        master_results[loc_id] = MasterOutput(
+            tick=simulation.current_tick,
+            location_id=loc_id,
+            characters=char_updates,
+            location=LocationUpdate(),
+        )
+    return PhaseResult(success=True, data=master_results)
+
+
+def _mock_phase2b_result(simulation):
+    """Create mock Phase 2b result with narratives for all locations."""
+    narratives = {}
+    for loc_id, loc in simulation.locations.items():
+        narratives[loc_id] = NarrativeResponse(
+            narrative=f"[Mock] Narrative for {loc.identity.name}"
+        )
+    return PhaseResult(success=True, data=narratives)
+
+
 @pytest.mark.asyncio
 async def test_run_tick_increments_current_tick(temp_demo_sim: Path, temp_config: Config) -> None:
     """Running a tick increments current_tick from 0 to 1."""
@@ -107,11 +144,19 @@ async def test_run_tick_returns_narratives(temp_demo_sim: Path, temp_config: Con
     sim = load_simulation(temp_demo_sim)
     location_ids = list(sim.locations.keys())
 
-    async def mock_execute(simulation, config, llm_client):
+    async def mock_phase1(simulation, config, llm_client):
         return _mock_phase1_result(simulation)
 
+    async def mock_phase2a(simulation, config, llm_client, intentions):
+        return _mock_phase2a_result(simulation)
+
+    async def mock_phase2b(simulation, config, llm_client, master_results, intentions):
+        return _mock_phase2b_result(simulation)
+
     with (
-        patch("src.runner.execute_phase1", mock_execute),
+        patch("src.runner.execute_phase1", mock_phase1),
+        patch("src.runner.execute_phase2a", mock_phase2a),
+        patch("src.runner.execute_phase2b", mock_phase2b),
         patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
     ):
         runner = TickRunner(temp_config, [])
@@ -123,9 +168,9 @@ async def test_run_tick_returns_narratives(temp_demo_sim: Path, temp_config: Con
     # Should have narrative for each location
     for loc_id in location_ids:
         assert loc_id in result.narratives
-        # Stubs return "[Stub]..." text
+        # Mocks return "[Mock]..." text
         assert result.narratives[loc_id]
-        assert "[Stub]" in result.narratives[loc_id]
+        assert "[Mock]" in result.narratives[loc_id]
 
     # Should have location names
     assert isinstance(result.location_names, dict)
