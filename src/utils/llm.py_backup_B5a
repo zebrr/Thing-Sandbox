@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from pydantic import BaseModel
@@ -72,31 +72,6 @@ class LLMRequest:
 
 
 @dataclass
-class RequestResult:
-    """Per-request result for detailed logging.
-
-    Captures entity_key, success status, usage statistics,
-    reasoning summary, and error message for each request in a batch.
-
-    Example:
-        >>> result = RequestResult(
-        ...     entity_key="intention:bob",
-        ...     success=True,
-        ...     usage=ResponseUsage(input_tokens=100, output_tokens=50),
-        ...     reasoning_summary=["Thinking about intentions..."],
-        ... )
-        >>> result.success
-        True
-    """
-
-    entity_key: str | None
-    success: bool
-    usage: ResponseUsage | None = None
-    reasoning_summary: list[str] | None = None
-    error: str | None = None
-
-
-@dataclass
 class BatchStats:
     """Statistics for the last batch execution.
 
@@ -108,8 +83,6 @@ class BatchStats:
         >>> await client.create_batch(requests)
         >>> stats = client.get_last_batch_stats()
         >>> print(f"Used {stats.total_tokens:,} tokens")
-        >>> for result in stats.results:
-        ...     print(f"{result.entity_key}: {result.success}")
     """
 
     total_tokens: int = 0
@@ -118,7 +91,6 @@ class BatchStats:
     request_count: int = 0
     success_count: int = 0
     error_count: int = 0
-    results: list[RequestResult] = field(default_factory=list)
 
 
 class ResponseChainManager:
@@ -344,14 +316,6 @@ class LLMClient:
         self._last_batch_stats.cached_tokens = response.usage.cached_tokens
         self._last_batch_stats.request_count = 1
         self._last_batch_stats.success_count = 1
-        self._last_batch_stats.results.append(
-            RequestResult(
-                entity_key=entity_key,
-                success=True,
-                usage=response.usage,
-                reasoning_summary=response.debug.reasoning_summary,
-            )
-        )
 
         # Auto-confirm with default_depth
         if entity_key:
@@ -430,17 +394,10 @@ class LLMClient:
                 schema=request.schema,
                 previous_response_id=previous_id,
             )
-        except Exception as e:
+        except Exception:
             # Track error in batch stats
             self._last_batch_stats.request_count += 1
             self._last_batch_stats.error_count += 1
-            self._last_batch_stats.results.append(
-                RequestResult(
-                    entity_key=request.entity_key,
-                    success=False,
-                    error=str(e),
-                )
-            )
             raise
 
         # Track success in batch stats
@@ -449,14 +406,6 @@ class LLMClient:
         self._last_batch_stats.cached_tokens += response.usage.cached_tokens
         self._last_batch_stats.request_count += 1
         self._last_batch_stats.success_count += 1
-        self._last_batch_stats.results.append(
-            RequestResult(
-                entity_key=request.entity_key,
-                success=True,
-                usage=response.usage,
-                reasoning_summary=response.debug.reasoning_summary,
-            )
-        )
 
         # Auto-confirm with appropriate depth
         if request.entity_key:

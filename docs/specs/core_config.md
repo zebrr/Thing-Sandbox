@@ -83,6 +83,14 @@ Used for:
 - Resolving `simulations/` path
 - Resolving default prompts in `src/prompts/`
 
+#### Config.output: OutputConfig
+
+Output channel configuration.
+
+- **console** — ConsoleOutputConfig: console output settings
+- **file** — FileOutputConfig: file (TickLogger) output settings
+- **telegram** — TelegramOutputConfig: Telegram output settings (future)
+
 ---
 
 ## Internal Models
@@ -138,6 +146,57 @@ class PhaseConfig(BaseModel):
 - `response_chain_depth` — depth of response chain (0 = independent requests)
 
 **None handling:** Fields with `None` value are not passed to OpenAI API.
+
+### OutputConfig
+
+Output channels configuration. Controls where simulation output is sent.
+
+```python
+class OutputConfig(BaseModel):
+    console: ConsoleOutputConfig = Field(default_factory=ConsoleOutputConfig)
+    file: FileOutputConfig = Field(default_factory=FileOutputConfig)
+    telegram: TelegramOutputConfig = Field(default_factory=TelegramOutputConfig)
+```
+
+### ConsoleOutputConfig
+
+Console output settings.
+
+```python
+class ConsoleOutputConfig(BaseModel):
+    enabled: bool = True
+    show_narratives: bool = True
+```
+
+**Field semantics:**
+- `enabled` — whether to output to console
+- `show_narratives` — whether to show narrative text
+
+### FileOutputConfig
+
+File output (TickLogger) settings.
+
+```python
+class FileOutputConfig(BaseModel):
+    enabled: bool = True
+```
+
+**Field semantics:**
+- `enabled` — whether to write tick logs to file
+
+### TelegramOutputConfig
+
+Telegram output settings (for future use).
+
+```python
+class TelegramOutputConfig(BaseModel):
+    enabled: bool = False
+    chat_id: str = ""
+```
+
+**Field semantics:**
+- `enabled` — whether to send to Telegram
+- `chat_id` — Telegram chat ID for notifications
 
 ---
 
@@ -202,6 +261,17 @@ reasoning_effort = "medium"
 reasoning_summary = "auto"
 truncation = "auto"
 response_chain_depth = 0
+
+[output.console]
+enabled = true
+show_narratives = true
+
+[output.file]
+enabled = true
+
+[output.telegram]
+enabled = false
+chat_id = ""
 ```
 
 ### .env
@@ -346,6 +416,16 @@ except PromptNotFoundError as e:
 - test_simulation_config_default_interval_invalid — interval < 1 raises ConfigError
 - test_simulation_config_default_ticks_limit_zero — 0 means unlimited
 - test_simulation_config_default_ticks_limit_positive — positive limit loads correctly
+
+### New Tests (for B.5a)
+
+- test_output_config_defaults — OutputConfig has sensible defaults
+- test_console_output_config_custom — ConsoleOutputConfig accepts custom values
+- test_file_output_config_custom — FileOutputConfig accepts custom values
+- test_telegram_output_config_custom — TelegramOutputConfig accepts custom values
+- test_output_config_from_toml — output config loaded correctly from config.toml
+- test_output_config_missing_uses_defaults — missing [output] section uses defaults
+- test_output_config_partial_section — partial output section fills missing with defaults
 
 ---
 

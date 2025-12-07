@@ -5,7 +5,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import BaseModel
 
-from src.utils.llm import LLMClient, LLMRequest, ResponseChainManager
+from src.utils.llm import (
+    BatchStats,
+    LLMClient,
+    LLMRequest,
+    RequestResult,
+    ResponseChainManager,
+)
 from src.utils.llm_adapters.base import (
     AdapterResponse,
     ResponseDebugInfo,
@@ -1040,8 +1046,6 @@ class TestBatchStats:
 
     def test_batch_stats_defaults(self) -> None:
         """BatchStats has correct default values."""
-        from src.utils.llm import BatchStats
-
         stats = BatchStats()
         assert stats.total_tokens == 0
         assert stats.reasoning_tokens == 0
@@ -1049,3 +1053,263 @@ class TestBatchStats:
         assert stats.request_count == 0
         assert stats.success_count == 0
         assert stats.error_count == 0
+        assert stats.results == []
+
+    def test_batch_stats_results_default_empty(self) -> None:
+        """BatchStats.results defaults to empty list."""
+        stats = BatchStats()
+        assert stats.results == []
+        assert isinstance(stats.results, list)
+
+
+# =============================================================================
+# RequestResult Tests
+# =============================================================================
+
+
+class TestRequestResult:
+    """Tests for RequestResult dataclass."""
+
+    def test_request_result_success(self) -> None:
+        """RequestResult captures successful request."""
+        usage = ResponseUsage(
+            input_tokens=100,
+            output_tokens=50,
+            reasoning_tokens=25,
+            cached_tokens=10,
+            total_tokens=150,
+        )
+        result = RequestResult(
+            entity_key="intention:bob",
+            success=True,
+            usage=usage,
+            reasoning_summary=["Thinking about intention..."],
+        )
+
+        assert result.entity_key == "intention:bob"
+        assert result.success is True
+        assert result.usage is usage
+        assert result.reasoning_summary == ["Thinking about intention..."]
+        assert result.error is None
+
+    def test_request_result_failure(self) -> None:
+        """RequestResult captures failed request."""
+        result = RequestResult(
+            entity_key="intention:alice",
+            success=False,
+            error="Rate limit exceeded",
+        )
+
+        assert result.entity_key == "intention:alice"
+        assert result.success is False
+        assert result.usage is None
+        assert result.reasoning_summary is None
+        assert result.error == "Rate limit exceeded"
+
+    def test_request_result_without_entity_key(self) -> None:
+        """RequestResult works without entity_key."""
+        result = RequestResult(
+            entity_key=None,
+            success=True,
+            usage=ResponseUsage(
+                input_tokens=50,
+                output_tokens=25,
+                total_tokens=75,
+            ),
+        )
+
+        assert result.entity_key is None
+        assert result.success is True
+
+    def test_request_result_non_ascii_error(self) -> None:
+        """RequestResult handles non-ASCII error messages."""
+        result = RequestResult(
+            entity_key="intention:персонаж",
+            success=False,
+            error="Ошибка: превышен лимит запросов",
+        )
+
+        assert result.entity_key == "intention:персонаж"
+        assert result.error == "Ошибка: превышен лимит запросов"
+
+
+# =============================================================================
+# BatchStats.results Integration Tests
+# =============================================================================
+
+
+class TestBatchStatsResults:
+    """Tests for BatchStats.results population."""
+
+    @pytest.mark.asyncio
+    async def test_batch_stats_results_populated_on_success(
+        self, mock_adapter: MagicMock
+    ) -> None:
+        """BatchStats.results populated with RequestResult on success."""
+        mock_adapter.execute.return_value = make_adapter_response(
+            response_id="resp_1", answer="test"
+        )
+        client = LLMClient(mock_adapter, [], default_depth=0)
+
+        requests = [
+            LLMRequest(
+                instructions="Test",
+                input_data="Data",
+                schema=SimpleAnswer,
+                entity_key="intention:bob",
+            ),
+        ]
+
+        await client.create_batch(requests)
+        stats = client.get_last_batch_stats()
+
+        assert len(stats.results) == 1
+        result = stats.results[0]
+        assert result.entity_key == "intention:bob"
+        assert result.success is True
+        assert result.usage is not None
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_batch_stats_results_populated_on_failure(
+        self, mock_adapter: MagicMock
+    ) -> None:
+        """BatchStats.results populated with RequestResult on failure."""
+        mock_adapter.execute.side_effect = LLMTimeoutError("Request timed out")
+        client = LLMClient(mock_adapter, [], default_depth=0)
+
+        requests = [
+            LLMRequest(
+                instructions="Test",
+                input_data="Data",
+                schema=SimpleAnswer,
+                entity_key="intention:alice",
+            ),
+        ]
+
+        await client.create_batch(requests)
+        stats = client.get_last_batch_stats()
+
+        assert len(stats.results) == 1
+        result = stats.results[0]
+        assert result.entity_key == "intention:alice"
+        assert result.success is False
+        assert result.usage is None
+        assert "timed out" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_batch_stats_results_contains_reasoning_summary(
+        self, mock_adapter: MagicMock
+    ) -> None:
+        """BatchStats.results contains reasoning_summary from response."""
+        mock_adapter.execute.return_value = make_complex_response()
+        client = LLMClient(mock_adapter, [], default_depth=0)
+
+        requests = [
+            LLMRequest(
+                instructions="Think",
+                input_data="Hard problem",
+                schema=ComplexResponse,
+                entity_key="intention:bob",
+            ),
+        ]
+
+        await client.create_batch(requests)
+        stats = client.get_last_batch_stats()
+
+        assert len(stats.results) == 1
+        result = stats.results[0]
+        assert result.reasoning_summary == ["Thinking..."]
+
+    @pytest.mark.asyncio
+    async def test_batch_stats_results_mixed_success_failure(
+        self, mock_adapter: MagicMock
+    ) -> None:
+        """BatchStats.results contains both success and failure results."""
+        mock_adapter.execute.side_effect = [
+            make_adapter_response(answer="ok"),
+            LLMRateLimitError("Rate limited"),
+            make_adapter_response(answer="also ok"),
+        ]
+        client = LLMClient(mock_adapter, [], default_depth=0)
+
+        requests = [
+            LLMRequest(
+                instructions="1",
+                input_data="1",
+                schema=SimpleAnswer,
+                entity_key="intention:a",
+            ),
+            LLMRequest(
+                instructions="2",
+                input_data="2",
+                schema=SimpleAnswer,
+                entity_key="intention:b",
+            ),
+            LLMRequest(
+                instructions="3",
+                input_data="3",
+                schema=SimpleAnswer,
+                entity_key="intention:c",
+            ),
+        ]
+
+        await client.create_batch(requests)
+        stats = client.get_last_batch_stats()
+
+        assert len(stats.results) == 3
+        assert stats.results[0].success is True
+        assert stats.results[0].entity_key == "intention:a"
+        assert stats.results[1].success is False
+        assert stats.results[1].entity_key == "intention:b"
+        assert "rate" in stats.results[1].error.lower()
+        assert stats.results[2].success is True
+        assert stats.results[2].entity_key == "intention:c"
+
+    @pytest.mark.asyncio
+    async def test_create_response_populates_results(
+        self, mock_adapter: MagicMock
+    ) -> None:
+        """create_response() also populates BatchStats.results."""
+        mock_adapter.execute.return_value = make_complex_response()
+        client = LLMClient(mock_adapter, [], default_depth=0)
+
+        await client.create_response(
+            instructions="Test",
+            input_data="Data",
+            schema=ComplexResponse,
+            entity_key="intention:bob",
+        )
+
+        stats = client.get_last_batch_stats()
+
+        assert len(stats.results) == 1
+        result = stats.results[0]
+        assert result.entity_key == "intention:bob"
+        assert result.success is True
+        assert result.reasoning_summary == ["Thinking..."]
+
+    @pytest.mark.asyncio
+    async def test_batch_stats_results_reset_between_calls(
+        self, mock_adapter: MagicMock
+    ) -> None:
+        """BatchStats.results reset between create_batch() calls."""
+        mock_adapter.execute.side_effect = [
+            make_adapter_response(answer="first"),
+            make_adapter_response(answer="second"),
+        ]
+        client = LLMClient(mock_adapter, [], default_depth=0)
+
+        # First batch
+        await client.create_batch(
+            [LLMRequest(instructions="1", input_data="1", schema=SimpleAnswer)]
+        )
+        stats1 = client.get_last_batch_stats()
+        assert len(stats1.results) == 1
+
+        # Second batch - results should be reset
+        await client.create_batch(
+            [LLMRequest(instructions="2", input_data="2", schema=SimpleAnswer)]
+        )
+        stats2 = client.get_last_batch_stats()
+        assert len(stats2.results) == 1  # Only second batch result

@@ -164,8 +164,4 @@ async def execute(
             else:
                 intentions[char_id] = result  # type: ignore[assignment]
 
-    return PhaseResult(
-        success=True,
-        data=intentions,
-        stats=llm_client.get_last_batch_stats() if llm_client else None,
-    )
+    return PhaseResult(success=True, data=intentions)

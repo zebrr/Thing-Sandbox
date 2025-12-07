@@ -89,62 +89,6 @@ class PhaseConfig(BaseModel):
     response_chain_depth: int = Field(ge=0, default=0)
 
 
-class ConsoleOutputConfig(BaseModel):
-    """Console output configuration.
-
-    Example:
-        >>> config = ConsoleOutputConfig(enabled=True, show_narratives=False)
-        >>> config.show_narratives
-        False
-    """
-
-    enabled: bool = True
-    show_narratives: bool = True
-
-
-class FileOutputConfig(BaseModel):
-    """File output configuration (TickLogger).
-
-    Example:
-        >>> config = FileOutputConfig(enabled=False)
-        >>> config.enabled
-        False
-    """
-
-    enabled: bool = True
-
-
-class TelegramOutputConfig(BaseModel):
-    """Telegram output configuration (future).
-
-    Example:
-        >>> config = TelegramOutputConfig(enabled=True, chat_id="123456")
-        >>> config.chat_id
-        '123456'
-    """
-
-    enabled: bool = False
-    chat_id: str = ""
-
-
-class OutputConfig(BaseModel):
-    """Output configuration section.
-
-    Controls output channels: console, file (TickLogger), and telegram.
-
-    Example:
-        >>> config = OutputConfig()
-        >>> config.console.enabled
-        True
-        >>> config.telegram.enabled
-        False
-    """
-
-    console: ConsoleOutputConfig = Field(default_factory=ConsoleOutputConfig)
-    file: FileOutputConfig = Field(default_factory=FileOutputConfig)
-    telegram: TelegramOutputConfig = Field(default_factory=TelegramOutputConfig)
-
-
 class EnvSettings(BaseSettings):
     """Environment variables loader using pydantic-settings.
 
@@ -193,7 +137,6 @@ class Config:
         phase2a: PhaseConfig,
         phase2b: PhaseConfig,
         phase4: PhaseConfig,
-        output: OutputConfig,
         openai_api_key: str | None,
         telegram_bot_token: str | None,
         project_root: Path,
@@ -206,7 +149,6 @@ class Config:
             phase2a: LLM configuration for Phase 2a (game master arbitration).
             phase2b: LLM configuration for Phase 2b (narrative generation).
             phase4: LLM configuration for Phase 4 (memory summarization).
-            output: Output configuration for console, file, and telegram.
             openai_api_key: OpenAI API key from .env.
             telegram_bot_token: Telegram bot token from .env.
             project_root: Project root directory path.
@@ -216,7 +158,6 @@ class Config:
         self.phase2a = phase2a
         self.phase2b = phase2b
         self.phase4 = phase4
-        self.output = output
         self.openai_api_key = openai_api_key
         self.telegram_bot_token = telegram_bot_token
         self.project_root = project_root
@@ -295,23 +236,6 @@ class Config:
                     )
                 raise ConfigError(f"Validation error in {phase_name} config: {e}")
 
-        # Parse output config (optional section, defaults if missing)
-        output_data = toml_data.get("output", {})
-        try:
-            output = OutputConfig(
-                console=ConsoleOutputConfig(**output_data.get("console", {})),
-                file=FileOutputConfig(**output_data.get("file", {})),
-                telegram=TelegramOutputConfig(**output_data.get("telegram", {})),
-            )
-        except ValidationError as e:
-            errors = e.errors()
-            if errors:
-                err = errors[0]
-                field = ".".join(str(loc) for loc in err["loc"])
-                msg = err["msg"]
-                raise ConfigError(f"Config error: output.{field} {msg}")
-            raise ConfigError(f"Validation error in output config: {e}")
-
         # Load environment variables
         env_file = project_root / ".env"
         env_settings = _load_env_settings(env_file if env_file.exists() else None)
@@ -328,7 +252,6 @@ class Config:
             phase2a=phase_configs["phase2a"],
             phase2b=phase_configs["phase2b"],
             phase4=phase_configs["phase4"],
-            output=output,
             openai_api_key=env_settings.openai_api_key,
             telegram_bot_token=env_settings.telegram_bot_token,
             project_root=project_root,

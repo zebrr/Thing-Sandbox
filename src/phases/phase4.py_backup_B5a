@@ -191,8 +191,4 @@ async def execute(
         char_id = char.identity.id
         _add_memory_cell(char, simulation.current_tick, pending_memories[char_id])
 
-    return PhaseResult(
-        success=True,
-        data=None,
-        stats=llm_client.get_last_batch_stats() if llm_client else None,
-    )
+    return PhaseResult(success=True, data=None)

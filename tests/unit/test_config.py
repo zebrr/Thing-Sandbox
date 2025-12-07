@@ -9,9 +9,13 @@ from pydantic import ValidationError
 from src.config import (
     Config,
     ConfigError,
+    ConsoleOutputConfig,
+    FileOutputConfig,
+    OutputConfig,
     PhaseConfig,
     PromptNotFoundError,
     SimulationConfig,
+    TelegramOutputConfig,
 )
 
 
@@ -683,3 +687,105 @@ class TestProjectRootDetection:
             Config.load(config_path=config_toml)
 
         assert "project root" in str(exc_info.value).lower()
+
+
+class TestOutputConfig:
+    """Tests for OutputConfig and related models."""
+
+    def test_output_config_defaults(self) -> None:
+        """OutputConfig has sensible defaults."""
+        config = OutputConfig()
+        assert config.console.enabled is True
+        assert config.console.show_narratives is True
+        assert config.file.enabled is True
+        assert config.telegram.enabled is False
+        assert config.telegram.chat_id == ""
+
+    def test_console_output_config_custom(self) -> None:
+        """ConsoleOutputConfig accepts custom values."""
+        config = ConsoleOutputConfig(enabled=False, show_narratives=False)
+        assert config.enabled is False
+        assert config.show_narratives is False
+
+    def test_file_output_config_custom(self) -> None:
+        """FileOutputConfig accepts custom values."""
+        config = FileOutputConfig(enabled=False)
+        assert config.enabled is False
+
+    def test_telegram_output_config_custom(self) -> None:
+        """TelegramOutputConfig accepts custom values."""
+        config = TelegramOutputConfig(enabled=True, chat_id="123456789")
+        assert config.enabled is True
+        assert config.chat_id == "123456789"
+
+    def test_output_config_from_toml(self, tmp_path: Path) -> None:
+        """Output config is loaded correctly from config.toml."""
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(
+            make_minimal_config_toml()
+            + """
+[output.console]
+enabled = false
+show_narratives = false
+
+[output.file]
+enabled = true
+
+[output.telegram]
+enabled = true
+chat_id = "test-chat-кириллица-123"
+""",
+            encoding="utf-8",
+        )
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        assert config.output.console.enabled is False
+        assert config.output.console.show_narratives is False
+        assert config.output.file.enabled is True
+        assert config.output.telegram.enabled is True
+        assert config.output.telegram.chat_id == "test-chat-кириллица-123"
+
+    def test_output_config_missing_uses_defaults(self, tmp_path: Path) -> None:
+        """Missing output section uses defaults."""
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(
+            make_minimal_config_toml(),  # No [output] section
+            encoding="utf-8",
+        )
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        assert config.output.console.enabled is True
+        assert config.output.console.show_narratives is True
+        assert config.output.file.enabled is True
+        assert config.output.telegram.enabled is False
+        assert config.output.telegram.chat_id == ""
+
+    def test_output_config_partial_section(self, tmp_path: Path) -> None:
+        """Partial output section fills missing with defaults."""
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(
+            make_minimal_config_toml()
+            + """
+[output.telegram]
+enabled = true
+chat_id = "42"
+""",
+            encoding="utf-8",
+        )
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        # console and file should have defaults
+        assert config.output.console.enabled is True
+        assert config.output.file.enabled is True
+        # telegram should have custom values
+        assert config.output.telegram.enabled is True
+        assert config.output.telegram.chat_id == "42"

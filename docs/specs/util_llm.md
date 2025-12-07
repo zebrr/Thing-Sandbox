@@ -113,6 +113,7 @@ class BatchStats:
     request_count: int = 0
     success_count: int = 0
     error_count: int = 0
+    results: list[RequestResult] = field(default_factory=list)
 ```
 
 - **total_tokens** — total tokens used (input + output)
@@ -121,6 +122,31 @@ class BatchStats:
 - **request_count** — total number of requests
 - **success_count** — successful requests
 - **error_count** — failed requests
+- **results** — per-request results with detailed usage and reasoning summaries
+
+---
+
+### RequestResult
+
+Per-request result for detailed logging.
+
+```python
+@dataclass
+class RequestResult:
+    entity_key: str | None
+    success: bool
+    usage: ResponseUsage | None = None
+    reasoning_summary: list[str] | None = None
+    error: str | None = None
+```
+
+- **entity_key** — entity key like "intention:bob", or None for standalone requests
+- **success** — whether the request succeeded
+- **usage** — token usage statistics (only on success)
+- **reasoning_summary** — reasoning summary from model (if is_reasoning=true and reasoning_summary enabled)
+- **error** — error message (only on failure)
+
+**Usage**: RequestResult is added to BatchStats.results for each request, enabling TickLogger to log per-entity statistics including reasoning summaries.
 
 ---
 
@@ -602,6 +628,23 @@ File: `tests/unit/test_llm.py`
 **LLMRequest:**
 - test_request_defaults — entity_key and depth_override are None
 - test_request_with_override — depth_override set
+
+**BatchStats (continued):**
+- test_batch_stats_results_default_empty — results defaults to empty list
+
+**RequestResult:**
+- test_request_result_success — captures successful request
+- test_request_result_failure — captures failed request
+- test_request_result_without_entity_key — works without entity_key
+- test_request_result_non_ascii_error — handles non-ASCII error messages
+
+**BatchStats.results Integration:**
+- test_batch_stats_results_populated_on_success — results populated on success
+- test_batch_stats_results_populated_on_failure — results populated on failure
+- test_batch_stats_results_contains_reasoning_summary — reasoning_summary preserved
+- test_batch_stats_results_mixed_success_failure — mixed results tracked
+- test_create_response_populates_results — single request also populates results
+- test_batch_stats_results_reset_between_calls — results reset on new batch
 
 ### Integration Tests (real API)
 

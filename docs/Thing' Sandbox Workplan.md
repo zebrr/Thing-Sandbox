@@ -791,51 +791,135 @@ user = renderer.render("phase1_intention_user", {
 
 ---
 
-### B.5: Отполировать MVP
+### B.5a: Расширить конфигурацию вывода и данные фаз
 
-FileNarrator, команды `init`/`status`, полная обработка ошибок.
+Добавление секции `[output]` в конфиг, расширение `BatchStats` для per-request данных, добавление статистики в `PhaseResult`.
 
-**STATUS: не готов**
+**STATUS: готов**
+
+**Ключевые документы:**
+- Текущая спека конфига: `docs/specs/core_config.md`
+- Текущая спека LLM клиента: `docs/specs/util_llm.md`
+- Текущая спека PhaseResult: `docs/specs/phase_common.md`
+- Usage Tracking: `docs/Thing' Sandbox LLM Usage Tracking.md`
 
 **Входные требования:**
-- B.4b готов
+- B.4b готов (все фазы реализованы)
 
 **Задачи:**
-- **Обновление конфигурации (при необходимости):**
-  - Обновить `config.toml` — добавить секции для narrators/logging если нужно
-  - Обновить `src/config.py` — добавить соответствующие Pydantic модели
-  - Обновить `tests/unit/test_config.py` — покрыть новые параметры
-- Реализовать `FileNarrator`:
-  - Запись логов в `logs/tick_NNNNNN.md`
-- Добавить команду CLI `init <sim-id>`:
-  - Создание новой симуляции из шаблона
-- Улучшить команду `status <sim-id>`:
-  - Показать current_tick, количество персонажей/локаций
-- Полная обработка ошибок:
-  - Все exit codes используются корректно
-  - Понятные сообщения об ошибках
-- Интеграционные тесты на несколько тактов подряд
+- Обновить `config.toml`:
+  - Добавить секцию `[output.console]` с `enabled`, `show_narratives`
+  - Добавить секцию `[output.file]` с `enabled`
+  - Добавить секцию `[output.telegram]` с `enabled`, `chat_id` (placeholder для будущего)
+- Обновить `src/config.py`:
+  - Добавить `ConsoleOutputConfig`, `FileOutputConfig`, `TelegramOutputConfig` Pydantic модели
+  - Добавить `OutputConfig` с вложенными конфигами
+  - Добавить `Config.output` атрибут
+- Обновить `docs/specs/core_config.md`:
+  - Добавить описание `OutputConfig` и вложенных моделей
+- Обновить `src/utils/llm.py`:
+  - Добавить `RequestResult` dataclass (entity_key, success, usage, reasoning_summary, error)
+  - Расширить `BatchStats` полем `results: list[RequestResult]`
+  - В `_execute_one()` сохранять per-request данные в `results`
+- Обновить `docs/specs/util_llm.md`:
+  - Добавить описание `RequestResult`
+  - Обновить описание `BatchStats`
+- Обновить `src/phases/common.py`:
+  - Добавить `stats: BatchStats | None = None` в `PhaseResult`
+- Обновить `docs/specs/phase_common.md`:
+  - Добавить описание поля `stats`
+- Обновить фазы 1, 2a, 2b, 4:
+  - Добавить `stats=llm_client.get_last_batch_stats()` в возвращаемый `PhaseResult`
+- Обновить тесты:
+  - `tests/unit/test_config.py` — тесты для `OutputConfig`
+  - `tests/unit/test_llm.py` — тесты для `RequestResult` и расширенного `BatchStats`
+  - `tests/unit/test_phases_common.py` — тест для `PhaseResult.stats`
 
 **Ожидаемый результат:**
-```bash
-# Создать симуляцию
-python -m src.cli init my-sim --template fantasy
+```python
+from src.config import Config
 
-# Запустить 5 тактов
-for i in {1..5}; do python -m src.cli run my-sim; done
+config = Config.load()
+print(config.output.console.enabled)        # True
+print(config.output.console.show_narratives) # True
+print(config.output.file.enabled)           # True
 
-# Проверить статус
-python -m src.cli status my-sim
-# Output: my-sim: tick 5, 3 characters, 2 locations, status: paused
-
-# Прочитать логи
-cat simulations/my-sim/logs/tick_000005.md
+# После выполнения фазы
+result = await execute_phase1(simulation, config, llm_client)
+print(result.stats.total_tokens)            # 4500
+print(result.stats.results[0].reasoning_summary)  # ["The character would..."]
 ```
 
 **Артефакты:**
-- Задание: `docs/tasks/TS-B.5-MVP-001.md`
-- Отчёт: `docs/tasks/TS-B.5-MVP-001_REPORT.md`
-- Модуль: `src/narrators.py` (добавить `FileNarrator`)
-- Модуль: `src/cli.py` (добавить команды `init`, улучшить `status`)
-- Тесты: `tests/integration/test_mvp.py`
-- Документация: `README.md` (обновить с примерами использования)
+- Задание: `docs/tasks/TS-B.5a-OUTPUT-001.md`
+- Отчёт: `docs/tasks/TS-B.5a-OUTPUT-001_REPORT.md`
+- Спецификации (обновить): `docs/specs/core_config.md`, `docs/specs/util_llm.md`, `docs/specs/phase_common.md`
+- Модули (обновить): `src/config.py`, `src/utils/llm.py`, `src/phases/common.py`, `src/phases/phase1.py`, `src/phases/phase2a.py`, `src/phases/phase2b.py`, `src/phases/phase4.py`
+- Конфиг: `config.toml` (обновить)
+- Тесты (обновить): `tests/unit/test_config.py`, `tests/unit/test_llm.py`, `tests/unit/test_phases_common.py`
+
+---
+
+### B.5b: Реализовать TickLogger
+
+Детальное логирование тиков в markdown-файлы с информацией по всем фазам, токенам и reasoning summaries.
+
+**STATUS: не готов**
+
+**Ключевые документы:**
+- Архитектура: `docs/Thing' Sandbox Architecture.md` (структура логов)
+- Спека раннера: `docs/specs/core_runner.md`
+- Спека нарраторов: `docs/specs/core_narrators.md`
+- Usage Tracking: `docs/Thing' Sandbox LLM Usage Tracking.md`
+
+**Входные требования:**
+- B.5a готов (OutputConfig, расширенный BatchStats и PhaseResult)
+
+**Задачи:**
+- Написать спецификацию `docs/specs/core_tick_logger.md`:
+  - `TickReport` dataclass — расширенный TickResult со статистикой по фазам
+  - `TickLogger` класс — запись детального markdown
+  - Формат файла `logs/tick_NNNNNN.md`
+- Реализовать `src/tick_logger.py`:
+  - `TickReport` — sim_id, tick_number, timestamp, duration, narratives, phase_stats (dict phase → BatchStats)
+  - `TickLogger.__init__(sim_path)` — путь к симуляции
+  - `TickLogger.write(report)` — запись markdown в `logs/tick_NNNNNN.md`
+  - Формат: заголовок, summary-таблица, секции по фазам с reasoning summaries
+- Обновить `src/runner.py`:
+  - Собирать `TickReport` из результатов фаз
+  - Если `config.output.file.enabled` — вызывать `TickLogger.write()`
+- Обновить `src/narrators.py`:
+  - `ConsoleNarrator.__init__(show_narratives)` — параметр для отключения нарративов
+  - Если `show_narratives=False` — не печатать секцию с нарративами
+- Обновить `docs/specs/core_runner.md`:
+  - Добавить шаг вызова TickLogger
+  - Добавить описание сборки TickReport
+- Обновить `docs/specs/core_narrators.md`:
+  - Добавить параметр `show_narratives` для ConsoleNarrator
+  - Убрать FileNarrator из плана (заменён на TickLogger)
+- Написать тесты:
+  - `tests/unit/test_tick_logger.py` — форматирование, запись файла
+  - Обновить `tests/unit/test_narrators.py` — тест `show_narratives=False`
+  - Обновить `tests/integration/test_skeleton.py` — проверка создания лог-файла
+
+**Ожидаемый результат:**
+```bash
+python -m src.cli run demo-sim
+# Создаётся logs/tick_000001.md с детальным содержимым:
+# - Summary таблица (токены, время)
+# - Phase 1: намерения каждого персонажа + reasoning
+# - Phase 2a: решения арбитра по локациям + reasoning
+# - Phase 2b: нарративы по локациям
+# - Phase 3: применённые изменения
+# - Phase 4: обновления памяти + reasoning
+
+cat simulations/demo-sim/logs/tick_000001.md
+```
+
+**Артефакты:**
+- Задание: `docs/tasks/TS-B.5b-TICKLOG-001.md`
+- Отчёт: `docs/tasks/TS-B.5b-TICKLOG-001_REPORT.md`
+- Спецификация: `docs/specs/core_tick_logger.md`
+- Модули: `src/tick_logger.py` (новый), `src/runner.py` (обновить), `src/narrators.py` (обновить)
+- Спецификации (обновить): `docs/specs/core_runner.md`, `docs/specs/core_narrators.md`
+- Тесты: `tests/unit/test_tick_logger.py` (новый), `tests/unit/test_narrators.py` (обновить), `tests/integration/test_skeleton.py` (обновить)

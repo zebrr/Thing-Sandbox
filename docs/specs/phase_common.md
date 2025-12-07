@@ -14,11 +14,18 @@ for unified phase execution results.
 Dataclass representing the result of phase execution.
 
 ```python
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.utils.llm import BatchStats
+
 @dataclass
 class PhaseResult:
     success: bool
     data: Any
     error: str | None = None
+    stats: BatchStats | None = None
 ```
 
 **Attributes:**
@@ -30,6 +37,7 @@ class PhaseResult:
   - Phase 3: `dict` with "pending_memories" key
   - Phase 4: `None`
 - **error** (str | None) — error message if success is False, None otherwise
+- **stats** (BatchStats | None) — LLM batch statistics from the phase execution, including per-request reasoning summaries
 
 **Usage:**
 
@@ -73,18 +81,25 @@ assert not result.success
 
 - **Standard Library**: dataclasses, typing
 - **External**: None
-- **Internal**: None
+- **Internal**: src.utils.llm.BatchStats (TYPE_CHECKING only)
 
 ---
 
 ## Test Coverage
 
-- **test_phases_common.py**: 5 tests
+- **test_phases_common.py**: 12 tests
   - test_phase_result_success_with_data
   - test_phase_result_failure_with_error
   - test_phase_result_default_error_is_none
   - test_phase_result_data_accepts_any_type
   - test_phase_result_equality
+  - test_phase_result_inequality
+  - test_phase_result_success_with_empty_data
+  - test_phase_result_failure_with_non_ascii_error
+  - test_phase_result_with_stats — stores BatchStats correctly
+  - test_phase_result_stats_default_none — stats defaults to None
+  - test_phase_result_stats_equality — same stats means equal
+  - test_phase_result_stats_with_failure — stats can be present on failure
 
 ---
 

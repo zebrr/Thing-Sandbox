@@ -1,6 +1,8 @@
 """Unit tests for phases/common module."""
 
 from src.phases.common import PhaseResult
+from src.utils.llm import BatchStats, RequestResult
+from src.utils.llm_adapters.base import ResponseUsage
 
 
 class TestPhaseResult:
@@ -73,3 +75,66 @@ class TestPhaseResult:
         result = PhaseResult(success=False, data=None, error="Ошибка: не удалось подключиться")
 
         assert result.error == "Ошибка: не удалось подключиться"
+
+    def test_phase_result_with_stats(self) -> None:
+        """PhaseResult stores BatchStats correctly."""
+        stats = BatchStats(
+            total_tokens=1500,
+            reasoning_tokens=500,
+            cached_tokens=100,
+            request_count=3,
+            success_count=2,
+            error_count=1,
+            results=[
+                RequestResult(
+                    entity_key="intention:bob",
+                    success=True,
+                    usage=ResponseUsage(
+                        input_tokens=100,
+                        output_tokens=50,
+                        total_tokens=150,
+                    ),
+                    reasoning_summary=["Thinking..."],
+                ),
+            ],
+        )
+        result = PhaseResult(success=True, data={"key": "value"}, stats=stats)
+
+        assert result.stats is stats
+        assert result.stats.total_tokens == 1500
+        assert result.stats.reasoning_tokens == 500
+        assert len(result.stats.results) == 1
+        assert result.stats.results[0].entity_key == "intention:bob"
+
+    def test_phase_result_stats_default_none(self) -> None:
+        """PhaseResult.stats defaults to None."""
+        result = PhaseResult(success=True, data={})
+
+        assert result.stats is None
+
+    def test_phase_result_stats_equality(self) -> None:
+        """Two PhaseResults with same stats are equal."""
+        stats = BatchStats(total_tokens=100)
+        result1 = PhaseResult(success=True, data={}, stats=stats)
+        result2 = PhaseResult(success=True, data={}, stats=stats)
+
+        assert result1 == result2
+
+    def test_phase_result_stats_with_failure(self) -> None:
+        """PhaseResult can have stats even on failure."""
+        stats = BatchStats(
+            request_count=1,
+            error_count=1,
+            results=[
+                RequestResult(
+                    entity_key="intention:alice",
+                    success=False,
+                    error="Timeout",
+                ),
+            ],
+        )
+        result = PhaseResult(success=False, data=None, error="Phase failed", stats=stats)
+
+        assert result.success is False
+        assert result.stats is not None
+        assert result.stats.error_count == 1
