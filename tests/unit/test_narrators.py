@@ -67,11 +67,11 @@ class TestConsoleNarrator:
         output = captured.out
 
         # Check header
-        assert "TICK 42" in output
+        assert "test-sim - tick #42" in output
         assert BOX_CHAR in output
 
         # Check location
-        assert "--- The Rusty Tankard ---" in output
+        assert "----- The Rusty Tankard (tavern) -----" in output
         assert "Bob enters the tavern." in output
 
     def test_console_narrator_output_multiple_locations(
@@ -98,9 +98,9 @@ class TestConsoleNarrator:
         captured = capsys.readouterr()
         output = captured.out
 
-        assert "--- Tavern ---" in output
+        assert "----- Tavern (tavern) -----" in output
         assert "Fire crackles." in output
-        assert "--- Dark Forest ---" in output
+        assert "----- Dark Forest (forest) -----" in output
         assert "Wind howls." in output
 
     def test_console_narrator_empty_narrative(self, capsys: pytest.CaptureFixture) -> None:
@@ -158,7 +158,7 @@ class TestConsoleNarrator:
         output = captured.out
 
         # Should still have header and footer
-        assert "TICK 0" in output
+        assert "test-sim - tick #0" in output
         assert BOX_CHAR in output
 
     def test_console_narrator_missing_location_name(self, capsys: pytest.CaptureFixture) -> None:
@@ -178,7 +178,7 @@ class TestConsoleNarrator:
         output = captured.out
 
         # Should use location_id as fallback
-        assert "--- unknown_loc ---" in output
+        assert "----- unknown_loc (unknown_loc) -----" in output
         assert "Something happens." in output
 
     def test_console_narrator_non_ascii_content(self, capsys: pytest.CaptureFixture) -> None:
@@ -217,8 +217,9 @@ class TestConsoleNarrator:
         captured = capsys.readouterr()
         lines = captured.out.split("\n")
 
-        # First line should be the header
-        header_line = lines[0]
+        # First non-empty line should be the header
+        non_empty_lines = [line for line in lines if line.strip()]
+        header_line = non_empty_lines[0]
         assert len(header_line) == HEADER_WIDTH
         assert all(c == BOX_CHAR for c in header_line)
 
@@ -257,7 +258,7 @@ class TestConsoleNarrator:
         output = captured.out
 
         # Should include narrative content
-        assert "--- The Rusty Tankard ---" in output
+        assert "----- The Rusty Tankard (tavern) -----" in output
         assert "Bob enters the tavern." in output
 
     def test_console_narrator_show_narratives_false(self, capsys: pytest.CaptureFixture) -> None:
@@ -277,10 +278,10 @@ class TestConsoleNarrator:
         output = captured.out
 
         # Should have header and footer
-        assert "TICK 42" in output
+        assert "test-sim - tick #42" in output
         assert BOX_CHAR in output
 
         # Should NOT include narrative content
-        assert "--- The Rusty Tankard ---" not in output
+        assert "----- The Rusty Tankard (tavern) -----" not in output
         assert "Bob enters the tavern." not in output
         assert "[No narrative]" not in output

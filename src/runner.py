@@ -154,6 +154,14 @@ class TickRunner:
         sim_path = self._config.project_root / "simulations" / sim_id
         simulation = load_simulation(sim_path)
 
+        logger.info(
+            "Starting tick %d for %s (%d chars, %d locs)",
+            simulation.current_tick + 1,
+            sim_id,
+            len(simulation.characters),
+            len(simulation.locations),
+        )
+
         logger.debug("Loaded simulation %s at tick %d", sim_id, simulation.current_tick)
 
         # Step 2: Check status

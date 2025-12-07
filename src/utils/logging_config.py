@@ -104,3 +104,8 @@ def setup_logging(level: int = logging.INFO) -> None:
     # Configure root logger
     root_logger.addHandler(handler)
     root_logger.setLevel(level)
+
+    # Silence noisy third-party loggers
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)

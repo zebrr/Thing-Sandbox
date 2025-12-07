@@ -113,8 +113,9 @@ class ConsoleNarrator:
         header_line = BOX_CHAR * HEADER_WIDTH
 
         # Header
+        self._safe_print("")
         self._safe_print(header_line)
-        self._safe_print(f"TICK {result.tick_number}")
+        self._safe_print(f"{result.sim_id} - tick #{result.tick_number}")
         self._safe_print(header_line)
         self._safe_print("")
 
@@ -122,7 +123,7 @@ class ConsoleNarrator:
         if self._show_narratives:
             for loc_id, narrative in result.narratives.items():
                 loc_name = result.location_names.get(loc_id, loc_id)
-                self._safe_print(f"--- {loc_name} ---")
+                self._safe_print(f"----- {loc_name} ({loc_id}) -----")
 
                 if narrative and narrative.strip():
                     self._safe_print(narrative)
@@ -133,6 +134,7 @@ class ConsoleNarrator:
 
         # Footer
         self._safe_print(header_line)
+        self._safe_print("")
 
     def _safe_print(self, text: str) -> None:
         """Print text with encoding error handling.

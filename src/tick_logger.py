@@ -294,7 +294,7 @@ class TickLogger:
                 moment_str = f'moment="{moment}"' if moment else "moment unchanged"
                 desc_str = "description unchanged"
                 if description:
-                    desc_str = f'description="{description[:50]}..."'
+                    desc_str = f'description="{description}"'
                 lines.append(f"**Location:** {moment_str}, {desc_str}")
             else:
                 lines.append("**Location:** moment unchanged, description unchanged")
@@ -421,9 +421,7 @@ class TickLogger:
             # New memory from pending_memories
             new_memory = report.pending_memories.get(char_id)
             if new_memory:
-                # Truncate if too long
-                display_memory = new_memory[:100] + "..." if len(new_memory) > 100 else new_memory
-                lines.append(f'- **New memory:** "{display_memory}"')
+                lines.append(f'- **New memory:** "{new_memory}"')
             else:
                 lines.append("- **New memory:** *(none)*")
 
@@ -478,9 +476,6 @@ class TickLogger:
             if result.entity_key == expected_key and result.reasoning_summary:
                 # Join reasoning parts and format as italic quote
                 text = " ".join(result.reasoning_summary)
-                # Truncate if very long
-                if len(text) > 200:
-                    text = text[:200] + "..."
                 return f'_"{text}"_'
 
         return None

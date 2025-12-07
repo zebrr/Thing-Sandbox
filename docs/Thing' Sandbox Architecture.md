@@ -45,7 +45,8 @@ thing'-sandbox/
 │   ├── cli.py                # точка входа (typer)
 │   ├── config.py             # загрузка конфигов
 │   ├── runner.py             # оркестрация такта
-│   └── narrators.py          # вывод: console, file, telegram, web
+│   ├── narrators.py          # вывод: console, telegram, web
+│   └── tick_logger.py        # детальное логирование тиков (markdown)
 │
 ├── tests/
 │   ├── unit/                 # юнит-тесты
@@ -317,7 +318,8 @@ python -m src.cli reset demo-sim
 | Prompt Renderer | `utils/prompts.py` | Загрузка и рендеринг Jinja2 промптов |
 | Storage | `utils/storage.py` | Чтение/запись симуляции |
 | Exit Codes | `utils/exit_codes.py` | Стандартные коды завершения |
-| Narrators | `narrators.py` | Вывод: console, file, telegram, web |
+| Narrators | `narrators.py` | Вывод: console, telegram, web |
+| TickLogger | `tick_logger.py` | Детальное логирование тиков в markdown |
 
 ### Классификация модулей
 
@@ -536,14 +538,14 @@ YYYY.MM.DD HH:MM:SS | LEVEL   | 🏷️ module: message
 | Параметры приложения | config.toml | src/config.py (Pydantic Settings) |
 | Параметры симуляции | simulation.json | simulations/{id}/simulation.json |
 
-### Интерфейсы вывода (Narrators)
+### Интерфейсы вывода
 
-| Интерфейс | Тип | Приоритет |
-|-----------|-----|----------|
-| Console | pull (print) | MVP |
-| File | write | MVP |
-| Telegram | push | после MVP |
-| Web | push (websocket) | после MVP |
+| Интерфейс | Компонент | Тип | Приоритет |
+|-----------|-----------|-----|----------|
+| Console | Narrator | pull (print) | MVP |
+| TickLogger | Logger | write (markdown) | MVP |
+| Telegram | Narrator | push | после MVP |
+| Web | Narrator | push (websocket) | после MVP |
 
 ---
 
