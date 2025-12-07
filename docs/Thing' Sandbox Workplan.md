@@ -864,7 +864,7 @@ print(result.stats.results[0].reasoning_summary)  # ["The character would..."]
 
 Детальное логирование тиков в markdown-файлы с информацией по всем фазам, токенам и reasoning summaries.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Ключевые документы:**
 - Архитектура: `docs/Thing' Sandbox Architecture.md` (структура логов)

@@ -13,6 +13,8 @@
 - {{ conn.description }} → {{ conn.location_id }}
 {% endfor %}
 
+**Valid location IDs:** {{ location.identity.id }}{% if location.identity.connections %}, {% for conn in location.identity.connections %}{{ conn.location_id }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+
 ## Characters
 
 {% if characters %}

@@ -3,7 +3,9 @@
 ## Status: READY
 
 Output handlers for Thing' Sandbox. Narrators receive tick results and deliver
-narratives to various destinations: console, files, Telegram, web.
+narratives to various destinations: console, Telegram, web.
+
+Note: File logging is handled separately by TickLogger (see `core_tick_logger.md`).
 
 ---
 
@@ -24,7 +26,7 @@ class Narrator(Protocol):
 - result — TickResult from completed tick
 
 **Side effects:**
-- Writes to destination (stdout, file, network)
+- Writes to destination (stdout, network)
 
 **Error handling:**
 - Narrator errors are logged but don't affect tick success
@@ -34,17 +36,24 @@ class Narrator(Protocol):
 
 Outputs narratives to stdout.
 
-#### ConsoleNarrator.__init__() -> None
+#### ConsoleNarrator.__init__(show_narratives: bool = True) -> None
 
-Initialize console narrator. No configuration required.
+Initialize console narrator.
+
+- **Parameters**:
+  - show_narratives — if True, print full narratives; if False, only header/footer
 
 #### ConsoleNarrator.output(result: TickResult) -> None
 
 Print narratives to stdout.
 
 - **Input**: TickResult with narratives
-- **Side effects**: prints to stdout
+- **Side effects**: prints to stdout (header/footer always, content if show_narratives=True)
 - **Errors**: logged, never raised
+
+**Behavior:**
+- When `show_narratives=True` (default): full output with location names and narratives
+- When `show_narratives=False`: only header and footer, no narrative content
 
 ---
 
@@ -77,23 +86,6 @@ Wind rustles through the ancient oaks. A distant wolf howls.
 - Location with empty narrative — shown with `[No narrative]` marker
 - All locations are always printed
 
-### FileNarrator (Future - B.5)
-
-Writes to `logs/tick_NNNNNN.md` in simulation folder.
-
-```markdown
-# Tick 42
-
-## Tavern
-
-The fire crackles softly as Bob enters the tavern.
-Elvira looks up from her drink, recognition flickering in her eyes.
-
-## Forest
-
-Wind rustles through the ancient oaks. A distant wolf howls.
-```
-
 ### TelegramNarrator (Future - after MVP)
 
 Sends narratives as Telegram messages.
@@ -124,7 +116,7 @@ ConsoleNarrator may fail if stdout is closed (rare). Logged as warning.
 TelegramNarrator network failures:
 - Logged as error
 - Don't retry (tick already saved)
-- User can re-read from file log
+- User can re-read from TickLogger output
 
 ---
 
@@ -162,14 +154,22 @@ result = TickResult(
 narrator.output(result)
 ```
 
+### Quiet Mode (Header Only)
+
+```python
+# When using file logging, suppress console narratives
+narrator = ConsoleNarrator(show_narratives=False)
+narrator.output(result)  # Only shows tick header/footer
+```
+
 ### Multiple Narrators
 
 ```python
-from src.narrators import ConsoleNarrator, FileNarrator
+from src.narrators import ConsoleNarrator
 
 narrators = [
     ConsoleNarrator(),
-    FileNarrator(sim_path),  # Future
+    # TelegramNarrator(config),  # Future
 ]
 
 for narrator in narrators:
@@ -206,6 +206,8 @@ class TickRunner:
 - test_console_narrator_single_location — formats correctly
 - test_console_narrator_multiple_locations — all locations printed
 - test_narrator_protocol — ConsoleNarrator satisfies Protocol
+- test_console_narrator_show_narratives_default_true — narratives shown by default
+- test_console_narrator_show_narratives_false — header/footer only when show_narratives=False
 
 ### Integration Tests
 

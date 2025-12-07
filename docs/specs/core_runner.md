@@ -47,6 +47,8 @@ Note: Uses `load_simulation()` and `save_simulation()` functions directly from `
 - `_loc_entities: list[dict[str, Any]]` — entity dicts for locations (mutated by LLMClient)
 - `_tick_stats: BatchStats` — accumulated statistics for the tick
 - `_narratives: dict[str, str]` — narratives extracted from phase 2b
+- `_phase_data: dict[str, PhaseData]` — per-phase execution data for TickLogger
+- `_pending_memories: dict[str, str]` — pending memory texts from phase 3 for TickLogger
 
 #### TickRunner.run_tick(sim_id: str) -> TickResult
 
@@ -88,10 +90,15 @@ Execute one complete tick of simulation.
 10. Set status = "paused"
 11. Save simulation atomically via save_simulation()
 12. Log tick completion with statistics
+12b. Write tick log via TickLogger if output.file.enabled
 13. Build TickResult with narratives
 14. Call each narrator with TickResult
 15. Return TickResult
 ```
+
+**Phase Data Collection:**
+Each phase stores duration, stats, and output in `_phase_data[phase_name]` as PhaseData.
+After save, TickLogger uses this data to write detailed markdown log.
 
 ### Atomicity
 
@@ -219,7 +226,7 @@ Runner does NOT catch phase exceptions. Exceptions propagate to CLI which:
 
 ## Dependencies
 
-- **Standard Library**: asyncio, dataclasses, logging, time, typing (Any, TYPE_CHECKING)
+- **Standard Library**: asyncio, dataclasses, datetime, logging, time, typing (Any, TYPE_CHECKING)
 - **External**: None
 - **Internal**:
   - config (Config, PhaseConfig)
@@ -228,6 +235,7 @@ Runner does NOT catch phase exceptions. Exceptions propagate to CLI which:
   - utils.llm_adapters (OpenAIAdapter)
   - narrators (Narrator protocol)
   - phases (execute_phase1, execute_phase2a, execute_phase2b, execute_phase3, execute_phase4)
+  - tick_logger (PhaseData, TickLogger, TickReport)
 
 ---
 
@@ -293,6 +301,8 @@ except PhaseError as e:
 
 - test_run_tick_with_stubs — full tick with stub phases
 - test_run_tick_state_persistence — load after save matches
+- test_run_tick_creates_log_file — log file written when output.file.enabled
+- test_run_tick_log_file_disabled — no log file when output.file.enabled=False
 
 ---
 

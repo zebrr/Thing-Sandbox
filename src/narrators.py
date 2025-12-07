@@ -61,9 +61,14 @@ class ConsoleNarrator:
         >>> narrator.output(result)  # Prints formatted output to console
     """
 
-    def __init__(self) -> None:
-        """Initialize console narrator. No configuration required."""
-        pass
+    def __init__(self, show_narratives: bool = True) -> None:
+        """Initialize console narrator.
+
+        Args:
+            show_narratives: Whether to show narrative text for each location.
+                If False, only header/footer with tick number is printed.
+        """
+        self._show_narratives = show_narratives
 
     def output(self, result: TickResult) -> None:
         """Print narratives to stdout.
@@ -113,17 +118,18 @@ class ConsoleNarrator:
         self._safe_print(header_line)
         self._safe_print("")
 
-        # Narratives for each location
-        for loc_id, narrative in result.narratives.items():
-            loc_name = result.location_names.get(loc_id, loc_id)
-            self._safe_print(f"--- {loc_name} ---")
+        # Narratives for each location (only if show_narratives is True)
+        if self._show_narratives:
+            for loc_id, narrative in result.narratives.items():
+                loc_name = result.location_names.get(loc_id, loc_id)
+                self._safe_print(f"--- {loc_name} ---")
 
-            if narrative and narrative.strip():
-                self._safe_print(narrative)
-            else:
-                self._safe_print("[No narrative]")
+                if narrative and narrative.strip():
+                    self._safe_print(narrative)
+                else:
+                    self._safe_print("[No narrative]")
 
-            self._safe_print("")
+                self._safe_print("")
 
         # Footer
         self._safe_print(header_line)

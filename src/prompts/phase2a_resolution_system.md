@@ -36,3 +36,4 @@ Your task: resolve the scene — determine what happens based on character inten
 - Stay within THIS tick — do not plan future events
 - Respect character personalities and world logic
 - Respond in the language of the simulation content (character descriptions, locations, memories)
+- Character location field MUST be one of the valid location IDs listed in the user prompt

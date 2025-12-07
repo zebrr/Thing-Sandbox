@@ -237,3 +237,50 @@ class TestConsoleNarrator:
         with patch("builtins.print", side_effect=OSError("stdout closed")):
             # Should not raise
             narrator.output(result)  # type: ignore[arg-type]
+
+    def test_console_narrator_show_narratives_default_true(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """ConsoleNarrator shows narratives by default."""
+        narrator = ConsoleNarrator()  # Default show_narratives=True
+        result = MockTickResult(
+            sim_id="test-sim",
+            tick_number=42,
+            narratives={"tavern": "Bob enters the tavern."},
+            location_names={"tavern": "The Rusty Tankard"},
+            success=True,
+        )
+
+        narrator.output(result)  # type: ignore[arg-type]
+
+        captured = capsys.readouterr()
+        output = captured.out
+
+        # Should include narrative content
+        assert "--- The Rusty Tankard ---" in output
+        assert "Bob enters the tavern." in output
+
+    def test_console_narrator_show_narratives_false(self, capsys: pytest.CaptureFixture) -> None:
+        """ConsoleNarrator hides narratives when show_narratives=False."""
+        narrator = ConsoleNarrator(show_narratives=False)
+        result = MockTickResult(
+            sim_id="test-sim",
+            tick_number=42,
+            narratives={"tavern": "Bob enters the tavern."},
+            location_names={"tavern": "The Rusty Tankard"},
+            success=True,
+        )
+
+        narrator.output(result)  # type: ignore[arg-type]
+
+        captured = capsys.readouterr()
+        output = captured.out
+
+        # Should have header and footer
+        assert "TICK 42" in output
+        assert BOX_CHAR in output
+
+        # Should NOT include narrative content
+        assert "--- The Rusty Tankard ---" not in output
+        assert "Bob enters the tavern." not in output
+        assert "[No narrative]" not in output

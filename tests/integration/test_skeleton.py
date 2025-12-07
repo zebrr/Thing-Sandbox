@@ -315,3 +315,75 @@ def test_run_command_not_found(temp_config: Config, monkeypatch: pytest.MonkeyPa
     assert result.exit_code == 2
     # Error output goes to stderr, but CliRunner mixes it into output
     assert "not found" in result.output
+
+
+@pytest.mark.asyncio
+async def test_run_tick_creates_log_file(temp_demo_sim: Path, temp_config: Config) -> None:
+    """Running a tick creates a log file when output.file.enabled is True."""
+    # Ensure output.file.enabled is True (default)
+    assert temp_config.output.file.enabled is True
+
+    async def mock_phase1(simulation, config, llm_client):
+        return _mock_phase1_result(simulation)
+
+    async def mock_phase2a(simulation, config, llm_client, intentions):
+        return _mock_phase2a_result(simulation)
+
+    async def mock_phase2b(simulation, config, llm_client, master_results, intentions):
+        return _mock_phase2b_result(simulation)
+
+    with (
+        patch("src.runner.execute_phase1", mock_phase1),
+        patch("src.runner.execute_phase2a", mock_phase2a),
+        patch("src.runner.execute_phase2b", mock_phase2b),
+        patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
+    ):
+        runner = TickRunner(temp_config, [])
+        result = await runner.run_tick("demo-sim")
+
+    assert result.success is True
+
+    # Check log file was created
+    log_file = temp_demo_sim / "logs" / "tick_000001.md"
+    assert log_file.exists()
+    assert log_file.is_file()
+
+    # Check log file content
+    content = log_file.read_text(encoding="utf-8")
+    assert "# Tick 1" in content
+    assert "## Phase 1: Intentions" in content
+    assert "## Phase 2a: Arbitration" in content
+    assert "## Phase 2b: Narratives" in content
+    assert "## Phase 3: State Application" in content
+    assert "## Phase 4: Memory" in content
+
+
+@pytest.mark.asyncio
+async def test_run_tick_log_file_disabled(temp_demo_sim: Path, temp_config: Config) -> None:
+    """No log file created when output.file.enabled is False."""
+    # Disable file output
+    temp_config.output.file.enabled = False
+
+    async def mock_phase1(simulation, config, llm_client):
+        return _mock_phase1_result(simulation)
+
+    async def mock_phase2a(simulation, config, llm_client, intentions):
+        return _mock_phase2a_result(simulation)
+
+    async def mock_phase2b(simulation, config, llm_client, master_results, intentions):
+        return _mock_phase2b_result(simulation)
+
+    with (
+        patch("src.runner.execute_phase1", mock_phase1),
+        patch("src.runner.execute_phase2a", mock_phase2a),
+        patch("src.runner.execute_phase2b", mock_phase2b),
+        patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
+    ):
+        runner = TickRunner(temp_config, [])
+        result = await runner.run_tick("demo-sim")
+
+    assert result.success is True
+
+    # Check log file was NOT created
+    log_file = temp_demo_sim / "logs" / "tick_000001.md"
+    assert not log_file.exists()

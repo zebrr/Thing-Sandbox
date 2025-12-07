@@ -20,6 +20,7 @@ import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from src.config import Config, PhaseConfig
@@ -30,6 +31,7 @@ from src.phases import (
     execute_phase3,
     execute_phase4,
 )
+from src.tick_logger import PhaseData, TickLogger, TickReport
 from src.utils.llm import BatchStats, LLMClient
 from src.utils.llm_adapters import OpenAIAdapter
 from src.utils.storage import Simulation, load_simulation, save_simulation
@@ -196,6 +198,22 @@ class TickRunner:
             f"{self._tick_stats.reasoning_tokens:,}",
         )
 
+        # Step 12b: Write tick log if enabled
+        if self._config.output.file.enabled:
+            tick_report = TickReport(
+                sim_id=sim_id,
+                tick_number=tick_number,
+                timestamp=datetime.now(),
+                duration=elapsed_time,
+                narratives=self._narratives,
+                phases=self._phase_data,
+                simulation=simulation,
+                pending_memories=self._pending_memories,
+            )
+            tick_logger = TickLogger(sim_path)
+            tick_logger.write(tick_report)
+            logger.debug("Wrote tick log: logs/tick_%06d.md", tick_number)
+
         # Build narratives and location_names from simulation
         narratives = self._narratives
         location_names = {loc_id: loc.identity.name for loc_id, loc in simulation.locations.items()}
@@ -337,6 +355,7 @@ class TickRunner:
 
         Creates separate LLM clients for character and location phases,
         logs statistics after each phase, and accumulates tick-level stats.
+        Stores PhaseData for each phase for TickLogger.
 
         Args:
             simulation: Simulation instance to process.
@@ -344,7 +363,11 @@ class TickRunner:
         Raises:
             PhaseError: If any phase returns success=False.
         """
+        # Initialize phase data storage
+        self._phase_data: dict[str, PhaseData] = {}
+
         # Phase 1: Intentions (characters)
+        phase1_start = time.time()
         char_client_p1 = self._create_char_llm_client(self._config.phase1)
         result1 = await execute_phase1(simulation, self._config, char_client_p1)
         if not result1.success:
@@ -352,6 +375,11 @@ class TickRunner:
 
         stats = char_client_p1.get_last_batch_stats()
         self._accumulate_tick_stats(stats)
+        self._phase_data["phase1"] = PhaseData(
+            duration=time.time() - phase1_start,
+            stats=stats,
+            data=result1.data,
+        )
         logger.info(
             "🎭 phase1: Complete (%d chars, %s tokens, %s reasoning)",
             len(simulation.characters),
@@ -363,6 +391,7 @@ class TickRunner:
         intentions_str = {char_id: resp.intention for char_id, resp in result1.data.items()}
 
         # Phase 2a: Scene resolution (locations)
+        phase2a_start = time.time()
         loc_client_p2a = self._create_loc_llm_client(self._config.phase2a)
         result2a = await execute_phase2a(simulation, self._config, loc_client_p2a, intentions_str)
         if not result2a.success:
@@ -370,6 +399,11 @@ class TickRunner:
 
         stats = loc_client_p2a.get_last_batch_stats()
         self._accumulate_tick_stats(stats)
+        self._phase_data["phase2a"] = PhaseData(
+            duration=time.time() - phase2a_start,
+            stats=stats,
+            data=result2a.data,
+        )
         logger.info(
             "⚖️ phase2a: Complete (%d locs, %s tokens, %s reasoning)",
             len(simulation.locations),
@@ -378,6 +412,7 @@ class TickRunner:
         )
 
         # Phase 2b: Narrative generation (locations)
+        phase2b_start = time.time()
         loc_client_p2b = self._create_loc_llm_client(self._config.phase2b)
         result2b = await execute_phase2b(
             simulation, self._config, loc_client_p2b, result2a.data, intentions_str
@@ -387,6 +422,11 @@ class TickRunner:
 
         stats = loc_client_p2b.get_last_batch_stats()
         self._accumulate_tick_stats(stats)
+        self._phase_data["phase2b"] = PhaseData(
+            duration=time.time() - phase2b_start,
+            stats=stats,
+            data=result2b.data,
+        )
         logger.info(
             "📖 phase2b: Complete (%d locs, %s tokens, %s reasoning)",
             len(simulation.locations),
@@ -400,20 +440,35 @@ class TickRunner:
             self._narratives[loc_id] = narrative_resp.narrative
 
         # Phase 3: Apply results (no LLM, pure mechanics)
+        phase3_start = time.time()
         result3 = await execute_phase3(simulation, self._config, result2a.data)
         if not result3.success:
             raise PhaseError("phase3", result3.error or "Unknown error")
+
+        self._phase_data["phase3"] = PhaseData(
+            duration=time.time() - phase3_start,
+            stats=None,
+            data=result3.data,
+        )
         logger.info("⚡ phase3: Complete (results applied)")
 
         # Phase 4: Memory update (characters)
-        pending_memories = result3.data["pending_memories"]
+        phase4_start = time.time()
+        self._pending_memories = result3.data["pending_memories"]
         char_client_p4 = self._create_char_llm_client(self._config.phase4)
-        result4 = await execute_phase4(simulation, self._config, char_client_p4, pending_memories)
+        result4 = await execute_phase4(
+            simulation, self._config, char_client_p4, self._pending_memories
+        )
         if not result4.success:
             raise PhaseError("phase4", result4.error or "Unknown error")
 
         stats = char_client_p4.get_last_batch_stats()
         self._accumulate_tick_stats(stats)
+        self._phase_data["phase4"] = PhaseData(
+            duration=time.time() - phase4_start,
+            stats=stats,
+            data=result4.data,
+        )
         logger.info(
             "🧠 phase4: Complete (%d chars, %s tokens, %s reasoning)",
             len(simulation.characters),
