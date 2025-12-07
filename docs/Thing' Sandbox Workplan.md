@@ -751,7 +751,7 @@ user = renderer.render("phase1_intention_user", {
 
 Фаза 4 — FIFO-сдвиг ячеек памяти, суммаризация выпадающих событий, graceful degradation.
 
-**STATUS: не готов**
+**STATUS: готов**
 
 **Ключевые документы:**
 - Концепция: `docs/Thing' Sandbox LLM Approach v2.md` (раздел 10 — Graceful Degradation)
