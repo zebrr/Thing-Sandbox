@@ -26,8 +26,10 @@ venv/
 
 # Project specific
 simulations/*
-!simulations/_templates/
 !simulations/demo-sim/
+!simulations/_templates/
+simulations/_templates/*
+!simulations/_templates/demo-sim/
 
 # Testing
 .coverage

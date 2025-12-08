@@ -23,7 +23,7 @@ EMOJI_MAP: dict[str, str] = {
     "phase1": "🎭",
     "phase2a": "⚖️",
     "phase2b": "📖",
-    "phase3": "🔧",
+    "phase3": "⚡",
     "phase4": "🧠",
     "llm": "🤖",
     "openai": "🤖",

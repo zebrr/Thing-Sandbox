@@ -124,6 +124,7 @@ class ConsoleNarrator:
             for loc_id, narrative in result.narratives.items():
                 loc_name = result.location_names.get(loc_id, loc_id)
                 self._safe_print(f"----- {loc_name} ({loc_id}) -----")
+                self._safe_print("")
 
                 if narrative and narrative.strip():
                     self._safe_print(narrative)

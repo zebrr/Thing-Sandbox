@@ -199,7 +199,7 @@ class TickRunner:
         # Step 12: Log tick completion with statistics
         elapsed_time = time.time() - start_time
         logger.info(
-            "🎬 runner: Tick %d complete (%.1fs, %s tokens, %s reasoning)",
+            "Tick %d completed (%.1fs, %s tokens, %s reasoning)",
             tick_number,
             elapsed_time,
             f"{self._tick_stats.total_tokens:,}",
@@ -388,8 +388,8 @@ class TickRunner:
             stats=stats,
             data=result1.data,
         )
-        logger.info(
-            "🎭 phase1: Complete (%d chars, %s tokens, %s reasoning)",
+        logging.getLogger("src.phases.phase1").info(
+            "Completed (%d chars, %s tokens, %s reasoning)",
             len(simulation.characters),
             f"{stats.total_tokens:,}",
             f"{stats.reasoning_tokens:,}",
@@ -412,8 +412,8 @@ class TickRunner:
             stats=stats,
             data=result2a.data,
         )
-        logger.info(
-            "⚖️ phase2a: Complete (%d locs, %s tokens, %s reasoning)",
+        logging.getLogger("src.phases.phase2a").info(
+            "Completed (%d locs, %s tokens, %s reasoning)",
             len(simulation.locations),
             f"{stats.total_tokens:,}",
             f"{stats.reasoning_tokens:,}",
@@ -435,8 +435,8 @@ class TickRunner:
             stats=stats,
             data=result2b.data,
         )
-        logger.info(
-            "📖 phase2b: Complete (%d locs, %s tokens, %s reasoning)",
+        logging.getLogger("src.phases.phase2b").info(
+            "Completed (%d locs, %s tokens, %s reasoning)",
             len(simulation.locations),
             f"{stats.total_tokens:,}",
             f"{stats.reasoning_tokens:,}",
@@ -458,7 +458,7 @@ class TickRunner:
             stats=None,
             data=result3.data,
         )
-        logger.info("⚡ phase3: Complete (results applied)")
+        logging.getLogger("src.phases.phase3").info("Completed (results applied)")
 
         # Phase 4: Memory update (characters)
         phase4_start = time.time()
@@ -477,8 +477,8 @@ class TickRunner:
             stats=stats,
             data=result4.data,
         )
-        logger.info(
-            "🧠 phase4: Complete (%d chars, %s tokens, %s reasoning)",
+        logging.getLogger("src.phases.phase4").info(
+            "Completed (%d chars, %s tokens, %s reasoning)",
             len(simulation.characters),
             f"{stats.total_tokens:,}",
             f"{stats.reasoning_tokens:,}",

@@ -355,7 +355,6 @@ simulations/my-sim/
 | `docs/Thing' Sandbox LLM Approach v2.md` | LLM integration: adapters, chains, batching |
 | `docs/Thing' Sandbox LLM Prompting.md` | Prompt design principles and templates |
 | `docs/specs/` | Module specifications |
-| `docs/tasks/` | Development tasks and reports |
 | `src/prompts/` | Default Jinja2 prompt templates |
 | `src/schemas/` | JSON schemas for validation |
 
@@ -437,9 +436,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-## Support
-
-- Check `/docs/specs/` for detailed component documentation
-- Review logs in `/simulation/<your_sim_name>/logs/` for debugging
-- Open a Github Issue
