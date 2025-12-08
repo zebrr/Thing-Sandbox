@@ -271,13 +271,13 @@ def test_console_narrator_output(capsys: pytest.CaptureFixture) -> None:
 
     # Check header
     assert "═" in output
-    assert "TICK 42" in output
+    assert "test-sim - tick #42" in output
 
     # Check locations
-    assert "--- The Rusty Tankard ---" in output
+    assert "----- The Rusty Tankard (tavern) -----" in output
     assert "Bob enters the tavern." in output
 
-    assert "--- Dark Forest ---" in output
+    assert "----- Dark Forest (forest) -----" in output
     assert "[No narrative]" in output
 
 

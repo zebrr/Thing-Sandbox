@@ -1,0 +1,5 @@
+# CODEOWNERS for Thing-Sandbox
+# All changes require review from @zebrr
+
+# Global owner - controls everything
+* @zebrr
