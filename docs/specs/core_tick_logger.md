@@ -10,54 +10,20 @@ and entity state changes.
 
 ## Public API
 
-### PhaseData
+### PhaseData and TickReport
 
-Dataclass for storing single phase execution data.
-
-```python
-@dataclass
-class PhaseData:
-    duration: float
-    stats: BatchStats | None
-    data: Any
-```
-
-**Attributes:**
-- **duration** (float) — phase execution time in seconds
-- **stats** (BatchStats | None) — LLM statistics from phase execution, None for Phase 3
-- **data** (Any) — phase-specific output:
-  - Phase 1: `dict[str, IntentionResponse]`
-  - Phase 2a: `dict[str, MasterOutput]`
-  - Phase 2b: `dict[str, NarrativeResponse]`
-  - Phase 3: `dict` with "pending_memories" key
-  - Phase 4: `None`
-
-### TickReport
-
-Dataclass for complete tick execution data.
+**NOTE:** `PhaseData` and `TickReport` are now defined in `src.runner` and imported here.
+See `core_runner.md` for full documentation of these dataclasses.
 
 ```python
-@dataclass
-class TickReport:
-    sim_id: str
-    tick_number: int
-    timestamp: datetime
-    duration: float
-    narratives: dict[str, str]
-    phases: dict[str, PhaseData]
-    simulation: Simulation
-    pending_memories: dict[str, str]
+# Import from runner
+from src.runner import PhaseData, TickReport
 ```
 
-**Attributes:**
-- **sim_id** (str) — simulation identifier
-- **tick_number** (int) — completed tick number
-- **timestamp** (datetime) — tick completion time (local)
-- **duration** (float) — total tick execution time in seconds
-- **narratives** (dict[str, str]) — location_id to narrative text
-- **phases** (dict[str, PhaseData]) — phase name to data ("phase1", "phase2a", "phase2b", "phase3", "phase4")
-- **simulation** (Simulation) — simulation state after all phases (for character/location access)
-- **pending_memories** (dict[str, str]) — character_id to memory text from Phase 3
+These classes are re-exported from tick_logger for backwards compatibility:
+```python
+__all__ = ["PhaseData", "TickLogger", "TickReport"]
+```
 
 ### TickLogger
 
@@ -245,9 +211,10 @@ Extract reasoning summary for specific entity from BatchStats.results.
 
 ## Dependencies
 
-- **Standard Library**: dataclasses, datetime, pathlib, typing
+- **Standard Library**: logging, pathlib, typing
 - **External**: None
 - **Internal**:
+  - src.runner (PhaseData, TickReport)
   - src.utils.storage (Simulation, StorageIOError)
   - src.utils.llm (BatchStats)
 
@@ -260,7 +227,8 @@ Extract reasoning summary for specific entity from BatchStats.results.
 ```python
 from pathlib import Path
 from datetime import datetime
-from src.tick_logger import TickLogger, TickReport, PhaseData
+from src.runner import PhaseData, TickReport
+from src.tick_logger import TickLogger
 
 sim_path = Path("simulations/my-sim")
 logger = TickLogger(sim_path)
@@ -268,9 +236,11 @@ logger = TickLogger(sim_path)
 report = TickReport(
     sim_id="my-sim",
     tick_number=42,
+    narratives={"tavern": "Bob enters..."},
+    location_names={"tavern": "The Tavern"},
+    success=True,
     timestamp=datetime.now(),
     duration=8.2,
-    narratives={"tavern": "Bob enters..."},
     phases={
         "phase1": PhaseData(duration=2.1, stats=stats1, data=intentions),
         "phase2a": PhaseData(duration=1.8, stats=stats2a, data=master_results),
@@ -289,13 +259,22 @@ logger.write(report)
 
 ```python
 class TickRunner:
-    async def run_tick(self, sim_id: str) -> TickResult:
+    async def run_tick(self, sim_id: str) -> TickReport:
         # ... execute phases with duration tracking ...
 
+        # Build unified TickReport
+        report = TickReport(...)
+
+        # Write log if enabled
         if self._config.output.file.enabled:
-            report = TickReport(...)
+            from src.tick_logger import TickLogger
             logger = TickLogger(sim_path)
             logger.write(report)
+
+        # Call narrators with same report
+        self._call_narrators(report)
+
+        return report
 ```
 
 ---

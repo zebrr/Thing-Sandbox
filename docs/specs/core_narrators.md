@@ -2,7 +2,7 @@
 
 ## Status: READY
 
-Output handlers for Thing' Sandbox. Narrators receive tick results and deliver
+Output handlers for Thing' Sandbox. Narrators receive tick reports and deliver
 narratives to various destinations: console, Telegram, web.
 
 Note: File logging is handled separately by TickLogger (see `core_tick_logger.md`).
@@ -17,13 +17,13 @@ Interface that all narrators must implement.
 
 ```python
 class Narrator(Protocol):
-    def output(self, result: TickResult) -> None:
-        """Output tick result to destination."""
+    def output(self, report: TickReport) -> None:
+        """Output tick report to destination."""
         ...
 ```
 
 **Input:**
-- result — TickResult from completed tick
+- report — TickReport from completed tick
 
 **Side effects:**
 - Writes to destination (stdout, network)
@@ -43,11 +43,11 @@ Initialize console narrator.
 - **Parameters**:
   - show_narratives — if True, print full narratives; if False, only header/footer
 
-#### ConsoleNarrator.output(result: TickResult) -> None
+#### ConsoleNarrator.output(report: TickReport) -> None
 
 Print narratives to stdout.
 
-- **Input**: TickResult with narratives
+- **Input**: TickReport with narratives
 - **Side effects**: prints to stdout (header/footer always, content if show_narratives=True)
 - **Errors**: logged, never raised
 
@@ -101,7 +101,7 @@ Each narrator runs independently. Failures are isolated:
 ```python
 for narrator in narrators:
     try:
-        narrator.output(result)
+        narrator.output(report)
     except Exception as e:
         logger.error(f"Narrator {type(narrator).__name__} failed: {e}")
         # Continue to next narrator
@@ -124,7 +124,7 @@ TelegramNarrator network failures:
 
 - **Standard Library**: logging, sys, typing (Protocol)
 - **External**: None
-- **Internal**: runner (TickResult)
+- **Internal**: runner (TickReport — via TYPE_CHECKING)
 
 ---
 
@@ -133,11 +133,14 @@ TelegramNarrator network failures:
 ### Basic Usage
 
 ```python
+from datetime import datetime
 from src.narrators import ConsoleNarrator
-from src.runner import TickResult
+from src.runner import TickReport
 
 narrator = ConsoleNarrator()
-result = TickResult(
+# Note: TickReport requires all fields, but narrators only use a subset
+# In practice, TickRunner creates the complete TickReport
+report = TickReport(
     sim_id="my-sim",
     tick_number=42,
     narratives={
@@ -149,9 +152,14 @@ result = TickResult(
         "forest": "Dark Forest",
     },
     success=True,
+    timestamp=datetime.now(),
+    duration=8.2,
+    phases={},
+    simulation=simulation,
+    pending_memories={},
 )
 
-narrator.output(result)
+narrator.output(report)
 ```
 
 ### Quiet Mode (Header Only)
@@ -159,7 +167,7 @@ narrator.output(result)
 ```python
 # When using file logging, suppress console narratives
 narrator = ConsoleNarrator(show_narratives=False)
-narrator.output(result)  # Only shows tick header/footer
+narrator.output(report)  # Only shows tick header/footer
 ```
 
 ### Multiple Narrators
@@ -173,7 +181,7 @@ narrators = [
 ]
 
 for narrator in narrators:
-    narrator.output(result)
+    narrator.output(report)
 ```
 
 ### In TickRunner
@@ -183,16 +191,18 @@ class TickRunner:
     def __init__(self, config, narrators: Sequence[Narrator]):
         self._narrators = narrators
 
-    async def run_tick(self, sim_id: str) -> TickResult:
+    async def run_tick(self, sim_id: str) -> TickReport:
         # ... execute phases ...
-        
+
+        report = TickReport(...)  # Contains all data
+
         for narrator in self._narrators:
             try:
-                narrator.output(result)
+                narrator.output(report)
             except Exception as e:
                 logger.error(f"Narrator failed: {e}")
-        
-        return result
+
+        return report
 ```
 
 ---
@@ -229,7 +239,7 @@ Using `typing.Protocol` for structural subtyping:
 from typing import Protocol
 
 class Narrator(Protocol):
-    def output(self, result: TickResult) -> None: ...
+    def output(self, report: TickReport) -> None: ...
 ```
 
 ### Box Drawing Characters

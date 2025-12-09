@@ -1,20 +1,26 @@
 """Output handlers for Thing' Sandbox.
 
-Narrators receive tick results and deliver narratives to various destinations:
+Narrators receive tick reports and deliver narratives to various destinations:
 console, files, Telegram, web.
 
 Example:
+    >>> from datetime import datetime
     >>> from src.narrators import ConsoleNarrator
-    >>> from src.runner import TickResult
+    >>> from src.runner import TickReport
     >>> narrator = ConsoleNarrator()
-    >>> result = TickResult(
+    >>> report = TickReport(
     ...     sim_id="my-sim",
     ...     tick_number=42,
     ...     narratives={"tavern": "Bob enters."},
     ...     location_names={"tavern": "The Rusty Tankard"},
     ...     success=True,
+    ...     timestamp=datetime.now(),
+    ...     duration=8.2,
+    ...     phases={},
+    ...     simulation=sim,
+    ...     pending_memories={},
     ... )
-    >>> narrator.output(result)
+    >>> narrator.output(report)
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ import sys
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from src.runner import TickResult
+    from src.runner import TickReport
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +44,15 @@ class Narrator(Protocol):
 
     Example:
         >>> class MyNarrator:
-        ...     def output(self, result: TickResult) -> None:
-        ...         print(result.tick_number)
+        ...     def output(self, report: TickReport) -> None:
+        ...         print(report.tick_number)
     """
 
-    def output(self, result: TickResult) -> None:
-        """Output tick result to destination.
+    def output(self, report: TickReport) -> None:
+        """Output tick report to destination.
 
         Args:
-            result: TickResult from completed tick.
+            report: TickReport from completed tick.
         """
         ...
 
@@ -54,11 +60,11 @@ class Narrator(Protocol):
 class ConsoleNarrator:
     """Outputs narratives to stdout.
 
-    Formats tick results with box-drawing characters and location headers.
+    Formats tick reports with box-drawing characters and location headers.
 
     Example:
         >>> narrator = ConsoleNarrator()
-        >>> narrator.output(result)  # Prints formatted output to console
+        >>> narrator.output(report)  # Prints formatted output to console
     """
 
     def __init__(self, show_narratives: bool = True) -> None:
@@ -70,7 +76,7 @@ class ConsoleNarrator:
         """
         self._show_narratives = show_narratives
 
-    def output(self, result: TickResult) -> None:
+    def output(self, report: TickReport) -> None:
         """Print narratives to stdout.
 
         Output format:
@@ -89,18 +95,18 @@ class ConsoleNarrator:
         ```
 
         Args:
-            result: TickResult with narratives and location names.
+            report: TickReport with narratives and location names.
         """
         try:
-            self._print_output(result)
+            self._print_output(report)
         except Exception as e:
             logger.warning("ConsoleNarrator failed: %s", e)
 
-    def _print_output(self, result: TickResult) -> None:
+    def _print_output(self, report: TickReport) -> None:
         """Internal method to print formatted output.
 
         Args:
-            result: TickResult with narratives.
+            report: TickReport with narratives.
         """
         # Use UTF-8 encoding with error handling for Windows console
         try:
@@ -115,14 +121,14 @@ class ConsoleNarrator:
         # Header
         self._safe_print("")
         self._safe_print(header_line)
-        self._safe_print(f"{result.sim_id} - tick #{result.tick_number}")
+        self._safe_print(f"{report.sim_id} - tick #{report.tick_number}")
         self._safe_print(header_line)
         self._safe_print("")
 
         # Narratives for each location (only if show_narratives is True)
         if self._show_narratives:
-            for loc_id, narrative in result.narratives.items():
-                loc_name = result.location_names.get(loc_id, loc_id)
+            for loc_id, narrative in report.narratives.items():
+                loc_name = report.location_names.get(loc_id, loc_id)
                 self._safe_print(f"----- {loc_name} ({loc_id}) -----")
                 self._safe_print("")
 

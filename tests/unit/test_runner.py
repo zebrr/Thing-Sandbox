@@ -9,7 +9,7 @@ import pytest
 
 from src.config import Config
 from src.phases.common import PhaseResult
-from src.runner import PhaseError, SimulationBusyError, TickResult, TickRunner
+from src.runner import PhaseError, SimulationBusyError, TickReport, TickRunner
 from src.utils.storage import (
     Character,
     CharacterIdentity,
@@ -141,39 +141,52 @@ def create_test_simulation_on_disk(tmp_path: Path, status: str = "paused") -> Pa
     return sim_path
 
 
-class TestTickResult:
-    """Tests for TickResult dataclass."""
+class TestTickReport:
+    """Tests for TickReport dataclass."""
 
-    def test_tick_result_success(self) -> None:
-        """TickResult stores success state."""
-        result = TickResult(
+    def test_tick_report_success(self, sample_simulation: Simulation) -> None:
+        """TickReport stores success state."""
+        report = TickReport(
             sim_id="my-sim",
             tick_number=42,
             narratives={"tavern": "Bob enters."},
             location_names={"tavern": "The Tavern"},
             success=True,
+            timestamp=datetime.now(),
+            duration=8.2,
+            phases={},
+            simulation=sample_simulation,
+            pending_memories={},
         )
 
-        assert result.sim_id == "my-sim"
-        assert result.tick_number == 42
-        assert result.narratives == {"tavern": "Bob enters."}
-        assert result.location_names == {"tavern": "The Tavern"}
-        assert result.success is True
-        assert result.error is None
+        assert report.sim_id == "my-sim"
+        assert report.tick_number == 42
+        assert report.narratives == {"tavern": "Bob enters."}
+        assert report.location_names == {"tavern": "The Tavern"}
+        assert report.success is True
+        assert report.error is None
+        assert report.duration == 8.2
+        assert report.phases == {}
+        assert report.pending_memories == {}
 
-    def test_tick_result_failure(self) -> None:
-        """TickResult stores failure state with error."""
-        result = TickResult(
+    def test_tick_report_failure(self, sample_simulation: Simulation) -> None:
+        """TickReport stores failure state with error."""
+        report = TickReport(
             sim_id="my-sim",
             tick_number=0,
             narratives={},
             location_names={},
             success=False,
+            timestamp=datetime.now(),
+            duration=0.0,
+            phases={},
+            simulation=sample_simulation,
+            pending_memories={},
             error="Phase 1 failed",
         )
 
-        assert result.success is False
-        assert result.error == "Phase 1 failed"
+        assert report.success is False
+        assert report.error == "Phase 1 failed"
 
 
 class TestSimulationBusyError:
@@ -336,8 +349,8 @@ class TestTickRunner:
         captured_results: list = []
 
         class MockNarrator:
-            def output(self, result: TickResult) -> None:
-                captured_results.append(result)
+            def output(self, report: TickReport) -> None:
+                captured_results.append(report)
 
         async def mock_phase1(sim, cfg, client):
             return PhaseResult(success=True, data={})
@@ -379,11 +392,11 @@ class TestTickRunner:
         call_count = 0
 
         class FailingNarrator:
-            def output(self, result: TickResult) -> None:
+            def output(self, report: TickReport) -> None:
                 raise RuntimeError("Narrator crashed")
 
         class CountingNarrator:
-            def output(self, result: TickResult) -> None:
+            def output(self, report: TickReport) -> None:
                 nonlocal call_count
                 call_count += 1
 

@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from src.tick_logger import PhaseData, TickLogger, TickReport
+from src.runner import PhaseData, TickReport
+from src.tick_logger import TickLogger
 
 # =============================================================================
 # Mock classes for testing
@@ -334,12 +335,17 @@ def mock_tick_report(
     return TickReport(
         sim_id="test-sim",
         tick_number=42,
-        timestamp=datetime(2025, 6, 7, 14, 32),
-        duration=8.2,
         narratives={
             "tavern": "Bob entered the tavern and ordered an ale.",
             "forest": "Alice patrolled the dark forest.",
         },
+        location_names={
+            "tavern": "The Rusty Tankard",
+            "forest": "Dark Forest",
+        },
+        success=True,
+        timestamp=datetime(2025, 6, 7, 14, 32),
+        duration=8.2,
         phases=mock_phase_data,
         simulation=mock_simulation,  # type: ignore[arg-type]
         pending_memories={"bob": "I ordered ale", "alice": "I patrolled"},
@@ -590,9 +596,11 @@ class TestTickLogger:
         report = TickReport(
             sim_id="test-sim",
             tick_number=1,
+            narratives={},
+            location_names={"tavern": "Tavern"},
+            success=True,
             timestamp=datetime.now(),
             duration=3.0,
-            narratives={},
             phases=phase_data,
             simulation=simulation,  # type: ignore[arg-type]
             pending_memories={},
@@ -661,9 +669,11 @@ class TestTickLogger:
         report = TickReport(
             sim_id="test-sim",
             tick_number=1,
+            narratives={"tavern": "Боб вошёл в таверну"},
+            location_names={"tavern": "Таверна «Ржавая Кружка»"},
+            success=True,
             timestamp=datetime.now(),
             duration=3.0,
-            narratives={"tavern": "Боб вошёл в таверну"},
             phases=phase_data,
             simulation=simulation,  # type: ignore[arg-type]
             pending_memories={"bob": "Я заказал эль"},

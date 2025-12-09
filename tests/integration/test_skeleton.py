@@ -247,10 +247,28 @@ def test_status_command_not_found(temp_config: Config, monkeypatch: pytest.Monke
 
 def test_console_narrator_output(capsys: pytest.CaptureFixture) -> None:
     """ConsoleNarrator prints formatted output."""
-    from src.runner import TickResult
+    from dataclasses import dataclass, field
+    from datetime import datetime
+    from typing import Any
+
+    @dataclass
+    class MockTickReport:
+        """Mock TickReport for testing."""
+
+        sim_id: str
+        tick_number: int
+        narratives: dict[str, str]
+        location_names: dict[str, str]
+        success: bool
+        timestamp: datetime = field(default_factory=datetime.now)
+        duration: float = 0.0
+        phases: dict[str, Any] = field(default_factory=dict)
+        simulation: Any = None
+        pending_memories: dict[str, str] = field(default_factory=dict)
+        error: str | None = None
 
     narrator = ConsoleNarrator()
-    result = TickResult(
+    report = MockTickReport(
         sim_id="test-sim",
         tick_number=42,
         narratives={
@@ -264,7 +282,7 @@ def test_console_narrator_output(capsys: pytest.CaptureFixture) -> None:
         success=True,
     )
 
-    narrator.output(result)
+    narrator.output(report)  # type: ignore[arg-type]
 
     captured = capsys.readouterr()
     output = captured.out

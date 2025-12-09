@@ -1,6 +1,8 @@
 """Unit tests for narrators module."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -9,14 +11,19 @@ from src.narrators import BOX_CHAR, HEADER_WIDTH, ConsoleNarrator, Narrator
 
 
 @dataclass
-class MockTickResult:
-    """Mock TickResult for testing narrators without importing runner."""
+class MockTickReport:
+    """Mock TickReport for testing narrators without importing runner."""
 
     sim_id: str
     tick_number: int
     narratives: dict[str, str]
     location_names: dict[str, str]
     success: bool
+    timestamp: datetime = field(default_factory=datetime.now)
+    duration: float = 0.0
+    phases: dict[str, Any] = field(default_factory=dict)
+    simulation: Any = None
+    pending_memories: dict[str, str] = field(default_factory=dict)
     error: str | None = None
 
 
@@ -35,7 +42,7 @@ class TestNarratorProtocol:
         """Custom class with output method satisfies Narrator protocol."""
 
         class CustomNarrator:
-            def output(self, result: MockTickResult) -> None:
+            def output(self, report: MockTickReport) -> None:
                 pass
 
         narrator: Narrator = CustomNarrator()  # type: ignore[assignment]
@@ -53,7 +60,7 @@ class TestConsoleNarrator:
     def test_console_narrator_output_single_location(self, capsys: pytest.CaptureFixture) -> None:
         """ConsoleNarrator outputs single location correctly."""
         narrator = ConsoleNarrator()
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=42,
             narratives={"tavern": "Bob enters the tavern."},
@@ -61,7 +68,7 @@ class TestConsoleNarrator:
             success=True,
         )
 
-        narrator.output(result)  # type: ignore[arg-type]
+        narrator.output(report)  # type: ignore[arg-type]
 
         captured = capsys.readouterr()
         output = captured.out
@@ -79,7 +86,7 @@ class TestConsoleNarrator:
     ) -> None:
         """ConsoleNarrator outputs all locations."""
         narrator = ConsoleNarrator()
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=1,
             narratives={
@@ -93,7 +100,7 @@ class TestConsoleNarrator:
             success=True,
         )
 
-        narrator.output(result)  # type: ignore[arg-type]
+        narrator.output(report)  # type: ignore[arg-type]
 
         captured = capsys.readouterr()
         output = captured.out
@@ -106,7 +113,7 @@ class TestConsoleNarrator:
     def test_console_narrator_empty_narrative(self, capsys: pytest.CaptureFixture) -> None:
         """ConsoleNarrator shows [No narrative] for empty string."""
         narrator = ConsoleNarrator()
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=5,
             narratives={"tavern": ""},
@@ -114,7 +121,7 @@ class TestConsoleNarrator:
             success=True,
         )
 
-        narrator.output(result)  # type: ignore[arg-type]
+        narrator.output(report)  # type: ignore[arg-type]
 
         captured = capsys.readouterr()
         output = captured.out
@@ -126,7 +133,7 @@ class TestConsoleNarrator:
     ) -> None:
         """ConsoleNarrator shows [No narrative] for whitespace-only string."""
         narrator = ConsoleNarrator()
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=5,
             narratives={"tavern": "   \n\t  "},
@@ -134,7 +141,7 @@ class TestConsoleNarrator:
             success=True,
         )
 
-        narrator.output(result)  # type: ignore[arg-type]
+        narrator.output(report)  # type: ignore[arg-type]
 
         captured = capsys.readouterr()
         output = captured.out
@@ -144,7 +151,7 @@ class TestConsoleNarrator:
     def test_console_narrator_empty_narratives_dict(self, capsys: pytest.CaptureFixture) -> None:
         """ConsoleNarrator handles empty narratives dict."""
         narrator = ConsoleNarrator()
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=0,
             narratives={},
@@ -152,7 +159,7 @@ class TestConsoleNarrator:
             success=True,
         )
 
-        narrator.output(result)  # type: ignore[arg-type]
+        narrator.output(report)  # type: ignore[arg-type]
 
         captured = capsys.readouterr()
         output = captured.out
@@ -164,7 +171,7 @@ class TestConsoleNarrator:
     def test_console_narrator_missing_location_name(self, capsys: pytest.CaptureFixture) -> None:
         """ConsoleNarrator falls back to location_id if name missing."""
         narrator = ConsoleNarrator()
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=1,
             narratives={"unknown_loc": "Something happens."},
@@ -172,7 +179,7 @@ class TestConsoleNarrator:
             success=True,
         )
 
-        narrator.output(result)  # type: ignore[arg-type]
+        narrator.output(report)  # type: ignore[arg-type]
 
         captured = capsys.readouterr()
         output = captured.out
@@ -184,7 +191,7 @@ class TestConsoleNarrator:
     def test_console_narrator_non_ascii_content(self, capsys: pytest.CaptureFixture) -> None:
         """ConsoleNarrator handles non-ASCII characters."""
         narrator = ConsoleNarrator()
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=1,
             narratives={"tavern": "Боб входит в таверну. 你好世界"},
@@ -192,7 +199,7 @@ class TestConsoleNarrator:
             success=True,
         )
 
-        narrator.output(result)  # type: ignore[arg-type]
+        narrator.output(report)  # type: ignore[arg-type]
 
         captured = capsys.readouterr()
         output = captured.out
@@ -204,7 +211,7 @@ class TestConsoleNarrator:
     def test_console_narrator_header_width(self, capsys: pytest.CaptureFixture) -> None:
         """ConsoleNarrator header line has correct width."""
         narrator = ConsoleNarrator()
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=1,
             narratives={},
@@ -212,7 +219,7 @@ class TestConsoleNarrator:
             success=True,
         )
 
-        narrator.output(result)  # type: ignore[arg-type]
+        narrator.output(report)  # type: ignore[arg-type]
 
         captured = capsys.readouterr()
         lines = captured.out.split("\n")
@@ -226,7 +233,7 @@ class TestConsoleNarrator:
     def test_console_narrator_catches_exceptions(self) -> None:
         """ConsoleNarrator catches and logs exceptions without raising."""
         narrator = ConsoleNarrator()
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=1,
             narratives={"loc": "text"},
@@ -237,14 +244,14 @@ class TestConsoleNarrator:
         # Mock print to raise exception
         with patch("builtins.print", side_effect=OSError("stdout closed")):
             # Should not raise
-            narrator.output(result)  # type: ignore[arg-type]
+            narrator.output(report)  # type: ignore[arg-type]
 
     def test_console_narrator_show_narratives_default_true(
         self, capsys: pytest.CaptureFixture
     ) -> None:
         """ConsoleNarrator shows narratives by default."""
         narrator = ConsoleNarrator()  # Default show_narratives=True
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=42,
             narratives={"tavern": "Bob enters the tavern."},
@@ -252,7 +259,7 @@ class TestConsoleNarrator:
             success=True,
         )
 
-        narrator.output(result)  # type: ignore[arg-type]
+        narrator.output(report)  # type: ignore[arg-type]
 
         captured = capsys.readouterr()
         output = captured.out
@@ -264,7 +271,7 @@ class TestConsoleNarrator:
     def test_console_narrator_show_narratives_false(self, capsys: pytest.CaptureFixture) -> None:
         """ConsoleNarrator hides narratives when show_narratives=False."""
         narrator = ConsoleNarrator(show_narratives=False)
-        result = MockTickResult(
+        report = MockTickReport(
             sim_id="test-sim",
             tick_number=42,
             narratives={"tavern": "Bob enters the tavern."},
@@ -272,7 +279,7 @@ class TestConsoleNarrator:
             success=True,
         )
 
-        narrator.output(result)  # type: ignore[arg-type]
+        narrator.output(report)  # type: ignore[arg-type]
 
         captured = capsys.readouterr()
         output = captured.out

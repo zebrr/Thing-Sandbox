@@ -9,18 +9,37 @@ loads state, runs all phases sequentially, saves results atomically.
 
 ## Public API
 
-### TickResult
+### PhaseData
 
-Result of a completed tick.
+Data from single phase execution, used by TickLogger.
 
 ```python
 @dataclass
-class TickResult:
+class PhaseData:
+    duration: float              # phase execution time in seconds
+    stats: BatchStats | None     # LLM statistics, None for Phase 3
+    data: Any                    # phase-specific output data
+```
+
+### TickReport
+
+Complete tick execution result. Used by both narrators (for output) and TickLogger (for detailed logs).
+
+```python
+@dataclass
+class TickReport:
+    # Required fields
     sim_id: str
     tick_number: int              # completed tick number
     narratives: dict[str, str]    # location_id → narrative text
     location_names: dict[str, str]  # location_id → display name
     success: bool
+    timestamp: datetime           # tick completion time (local)
+    duration: float               # total tick execution time in seconds
+    phases: dict[str, PhaseData]  # phase name → PhaseData mapping
+    simulation: Simulation        # simulation state after all phases
+    pending_memories: dict[str, str]  # character_id → memory text from Phase 3
+    # Optional field
     error: str | None = None
 ```
 
@@ -50,13 +69,13 @@ Note: Uses `load_simulation()` and `save_simulation()` functions directly from `
 - `_phase_data: dict[str, PhaseData]` — per-phase execution data for TickLogger
 - `_pending_memories: dict[str, str]` — pending memory texts from phase 3 for TickLogger
 
-#### TickRunner.run_tick(sim_id: str) -> TickResult
+#### TickRunner.run_tick(sim_id: str) -> TickReport
 
 Execute one complete tick of simulation.
 
 - **Input**:
   - sim_id — simulation identifier
-- **Returns**: TickResult with tick data and narratives
+- **Returns**: TickReport with tick data, narratives, and phase information
 - **Raises**:
   - SimulationNotFoundError (EXIT_INPUT_ERROR) — simulation doesn't exist
   - SimulationBusyError (EXIT_RUNTIME_ERROR) — simulation status is "running"
@@ -64,7 +83,7 @@ Execute one complete tick of simulation.
   - StorageError (EXIT_IO_ERROR) — failed to save results
 - **Side effects**:
   - Updates simulation state on disk (atomic)
-  - Calls all narrators with TickResult
+  - Calls all narrators with TickReport
 
 ---
 
@@ -90,10 +109,10 @@ Execute one complete tick of simulation.
 10. Set status = "paused"
 11. Save simulation atomically via save_simulation()
 12. Log tick completion with statistics
-12b. Write tick log via TickLogger if output.file.enabled
-13. Build TickResult with narratives
-14. Call each narrator with TickResult
-15. Return TickResult
+12b. Build TickReport with narratives and phase data
+13. Write tick log via TickLogger if output.file.enabled
+14. Call each narrator with TickReport
+15. Return TickReport
 ```
 
 **Phase Data Collection:**
@@ -235,7 +254,7 @@ Runner does NOT catch phase exceptions. Exceptions propagate to CLI which:
   - utils.llm_adapters (OpenAIAdapter)
   - narrators (Narrator protocol)
   - phases (execute_phase1, execute_phase2a, execute_phase2b, execute_phase3, execute_phase4)
-  - tick_logger (PhaseData, TickLogger, TickReport)
+  - tick_logger (TickLogger — imports PhaseData and TickReport from runner)
 
 ---
 
@@ -252,9 +271,9 @@ config = Config.load()
 narrators = [ConsoleNarrator()]
 
 runner = TickRunner(config, narrators)
-result = await runner.run_tick("my-sim")
+report = await runner.run_tick("my-sim")
 
-print(f"Completed tick {result.tick_number}")
+print(f"Completed tick {report.tick_number}")
 ```
 
 ### Error Handling
@@ -264,7 +283,7 @@ from src.runner import TickRunner, SimulationNotFoundError, PhaseError
 from src.utils.exit_codes import EXIT_INPUT_ERROR, EXIT_RUNTIME_ERROR
 
 try:
-    result = await runner.run_tick("my-sim")
+    report = await runner.run_tick("my-sim")
 except SimulationNotFoundError:
     sys.exit(EXIT_INPUT_ERROR)
 except PhaseError as e:
@@ -284,7 +303,7 @@ except PhaseError as e:
 - test_run_tick_phase1_fails — no state saved, exception propagates
 - test_run_tick_phase2a_fails — no state saved after phase1 completed
 - test_run_tick_atomicity — verify no partial saves
-- test_run_tick_narrators_called — all narrators receive TickResult
+- test_run_tick_narrators_called — all narrators receive TickReport
 - test_run_tick_empty_simulation — works with 0 characters
 - test_run_tick_increments_tick_number — current_tick incremented
 

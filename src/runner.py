@@ -10,8 +10,8 @@ Example:
     >>> config = Config.load()
     >>> narrators = [ConsoleNarrator()]
     >>> runner = TickRunner(config, narrators)
-    >>> result = await runner.run_tick("my-sim")
-    >>> print(f"Completed tick {result.tick_number}")
+    >>> report = await runner.run_tick("my-sim")
+    >>> print(f"Completed tick {report.tick_number}")
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ from src.phases import (
     execute_phase3,
     execute_phase4,
 )
-from src.tick_logger import PhaseData, TickLogger, TickReport
 from src.utils.llm import BatchStats, LLMClient
 from src.utils.llm_adapters import OpenAIAdapter
 from src.utils.storage import Simulation, load_simulation, save_simulation
@@ -68,24 +67,54 @@ class PhaseError(Exception):
 
 
 @dataclass
-class TickResult:
-    """Result of a completed tick.
+class PhaseData:
+    """Data from single phase execution.
+
+    Attributes:
+        duration: Phase execution time in seconds.
+        stats: LLM statistics from phase execution, None for Phase 3.
+        data: Phase-specific output data.
+
+    Example:
+        >>> data = PhaseData(duration=2.1, stats=batch_stats, data=intentions)
+    """
+
+    duration: float
+    stats: BatchStats | None
+    data: Any
+
+
+@dataclass
+class TickReport:
+    """Complete tick execution result.
+
+    Used by both narrators (for output) and tick_logger (for detailed logs).
 
     Attributes:
         sim_id: Simulation identifier.
         tick_number: Completed tick number.
-        narratives: Mapping of location_id to narrative text.
-        location_names: Mapping of location_id to display name.
+        narratives: Location_id to narrative text mapping.
+        location_names: Location_id to display name mapping.
         success: Whether tick completed successfully.
+        timestamp: Tick completion time (local).
+        duration: Total tick execution time in seconds.
+        phases: Phase name to PhaseData mapping.
+        simulation: Simulation state after all phases.
+        pending_memories: Character_id to memory text from Phase 3.
         error: Error message if success is False.
 
     Example:
-        >>> result = TickResult(
+        >>> report = TickReport(
         ...     sim_id="my-sim",
         ...     tick_number=42,
         ...     narratives={"tavern": "Bob enters."},
         ...     location_names={"tavern": "The Rusty Tankard"},
         ...     success=True,
+        ...     timestamp=datetime.now(),
+        ...     duration=8.2,
+        ...     phases={"phase1": phase1_data},
+        ...     simulation=sim,
+        ...     pending_memories={"bob": "I saw..."},
         ... )
     """
 
@@ -94,6 +123,11 @@ class TickResult:
     narratives: dict[str, str]
     location_names: dict[str, str]
     success: bool
+    timestamp: datetime
+    duration: float
+    phases: dict[str, PhaseData]
+    simulation: Simulation
+    pending_memories: dict[str, str]
     error: str | None = None
 
 
@@ -117,7 +151,7 @@ class TickRunner:
         self._config = config
         self._narrators = narrators
 
-    async def run_tick(self, sim_id: str) -> TickResult:
+    async def run_tick(self, sim_id: str) -> TickReport:
         """Execute one complete tick of simulation.
 
         Flow:
@@ -133,14 +167,16 @@ class TickRunner:
         10. Set status to "paused"
         11. Save simulation to disk
         12. Log tick completion with statistics
-        13. Call all narrators
-        14. Return TickResult
+        13. Build TickReport
+        14. Write tick log if enabled
+        15. Call all narrators
+        16. Return TickReport
 
         Args:
             sim_id: Simulation identifier.
 
         Returns:
-            TickResult with tick data and narratives.
+            TickReport with tick data, narratives, and phase information.
 
         Raises:
             SimulationNotFoundError: Simulation doesn't exist.
@@ -206,39 +242,35 @@ class TickRunner:
             f"{self._tick_stats.reasoning_tokens:,}",
         )
 
-        # Step 12b: Write tick log if enabled
-        if self._config.output.file.enabled:
-            tick_report = TickReport(
-                sim_id=sim_id,
-                tick_number=tick_number,
-                timestamp=datetime.now(),
-                duration=elapsed_time,
-                narratives=self._narratives,
-                phases=self._phase_data,
-                simulation=simulation,
-                pending_memories=self._pending_memories,
-            )
-            tick_logger = TickLogger(sim_path)
-            tick_logger.write(tick_report)
-            logger.debug("Wrote tick log: logs/tick_%06d.md", tick_number)
-
-        # Build narratives and location_names from simulation
-        narratives = self._narratives
+        # Build location_names from simulation
         location_names = {loc_id: loc.identity.name for loc_id, loc in simulation.locations.items()}
 
-        # Step 13: Build result
-        result = TickResult(
+        # Step 13: Build TickReport (used by both tick_logger and narrators)
+        report = TickReport(
             sim_id=sim_id,
             tick_number=tick_number,
-            narratives=narratives,
+            narratives=self._narratives,
             location_names=location_names,
             success=True,
+            timestamp=datetime.now(),
+            duration=elapsed_time,
+            phases=self._phase_data,
+            simulation=simulation,
+            pending_memories=self._pending_memories,
         )
 
-        # Step 14: Call all narrators
-        self._call_narrators(result)
+        # Step 14: Write tick log if enabled
+        if self._config.output.file.enabled:
+            from src.tick_logger import TickLogger
 
-        return result
+            tick_logger = TickLogger(sim_path)
+            tick_logger.write(report)
+            logger.debug("Wrote tick log: logs/tick_%06d.md", tick_number)
+
+        # Step 15: Call all narrators
+        self._call_narrators(report)
+
+        return report
 
     def _create_entity_dicts(self, simulation: Simulation) -> None:
         """Create entity dicts for LLM clients.
@@ -497,16 +529,16 @@ class TickRunner:
         self._tick_stats.success_count += phase_stats.success_count
         self._tick_stats.error_count += phase_stats.error_count
 
-    def _call_narrators(self, result: TickResult) -> None:
-        """Call all narrators with result.
+    def _call_narrators(self, report: TickReport) -> None:
+        """Call all narrators with report.
 
         Narrator failures are logged but don't affect tick result.
 
         Args:
-            result: TickResult to output.
+            report: TickReport to output.
         """
         for narrator in self._narrators:
             try:
-                narrator.output(result)
+                narrator.output(report)
             except Exception as e:
                 logger.error("Narrator %s failed: %s", type(narrator).__name__, e)

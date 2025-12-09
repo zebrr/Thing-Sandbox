@@ -5,7 +5,8 @@ information including token usage, reasoning summaries, and entity state changes
 
 Example:
     >>> from pathlib import Path
-    >>> from src.tick_logger import TickLogger, TickReport, PhaseData
+    >>> from src.runner import PhaseData, TickReport
+    >>> from src.tick_logger import TickLogger
     >>> logger = TickLogger(Path("simulations/my-sim"))
     >>> logger.write(report)
 """
@@ -13,71 +14,18 @@ Example:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from src.runner import PhaseData, TickReport
 
 if TYPE_CHECKING:
     from src.utils.llm import BatchStats
-    from src.utils.storage import Simulation
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class PhaseData:
-    """Data from single phase execution.
-
-    Attributes:
-        duration: Phase execution time in seconds.
-        stats: LLM statistics from phase execution, None for Phase 3.
-        data: Phase-specific output data.
-
-    Example:
-        >>> data = PhaseData(duration=2.1, stats=batch_stats, data=intentions)
-    """
-
-    duration: float
-    stats: BatchStats | None
-    data: Any
-
-
-@dataclass
-class TickReport:
-    """Complete tick execution data for logging.
-
-    Attributes:
-        sim_id: Simulation identifier.
-        tick_number: Completed tick number.
-        timestamp: Tick completion time (local).
-        duration: Total tick execution time in seconds.
-        narratives: Location_id to narrative text mapping.
-        phases: Phase name to PhaseData mapping.
-        simulation: Simulation state after all phases.
-        pending_memories: Character_id to memory text from Phase 3.
-
-    Example:
-        >>> report = TickReport(
-        ...     sim_id="my-sim",
-        ...     tick_number=42,
-        ...     timestamp=datetime.now(),
-        ...     duration=8.2,
-        ...     narratives={"tavern": "Bob enters..."},
-        ...     phases={"phase1": phase1_data, ...},
-        ...     simulation=sim,
-        ...     pending_memories={"bob": "I saw..."},
-        ... )
-    """
-
-    sim_id: str
-    tick_number: int
-    timestamp: datetime
-    duration: float
-    narratives: dict[str, str]
-    phases: dict[str, PhaseData]
-    simulation: Simulation
-    pending_memories: dict[str, str]
+# Re-export for backwards compatibility
+__all__ = ["PhaseData", "TickLogger", "TickReport"]
 
 
 class TickLogger:
