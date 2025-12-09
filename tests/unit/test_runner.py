@@ -619,3 +619,203 @@ class TestAggregateSimulationUsage:
         assert sim_openai is not None
         assert sim_openai["total_tokens"] == 0
         assert sim_openai["total_requests"] == 0
+
+
+class TestNarratorLifecycleNotifications:
+    """Tests for narrator lifecycle notification methods."""
+
+    @pytest.mark.asyncio
+    async def test_runner_calls_on_tick_start(self, mock_config: Config, tmp_path: Path) -> None:
+        """Runner calls on_tick_start on all narrators with simulation."""
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
+
+        captured_tick_starts: list[tuple[str, int, object]] = []
+
+        class MockNarrator:
+            def output(self, report: TickReport) -> None:
+                pass
+
+            def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+                captured_tick_starts.append((sim_id, tick_number, sim))
+
+            def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+                pass
+
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2a(sim, cfg, client, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2b(sim, cfg, client, master_results, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase3(sim, cfg, master_results):
+            return PhaseResult(success=True, data={"pending_memories": {}})
+
+        async def mock_phase4(sim, cfg, client, memories):
+            return PhaseResult(success=True, data=None)
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a),
+            patch("src.runner.execute_phase2b", mock_phase2b),
+            patch("src.runner.execute_phase3", mock_phase3),
+            patch("src.runner.execute_phase4", mock_phase4),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [MockNarrator(), MockNarrator()])
+            await runner.run_tick(simulation, sim_path)
+
+        # Both narrators should have on_tick_start called
+        assert len(captured_tick_starts) == 2
+        # All calls should have correct sim_id, tick_number, and simulation
+        for sim_id, tick_number, sim in captured_tick_starts:
+            assert sim_id == "test-sim"
+            assert tick_number == 1
+            assert sim is not None  # simulation object was passed
+
+    @pytest.mark.asyncio
+    async def test_runner_calls_on_phase_complete_for_each_phase(
+        self, mock_config: Config, tmp_path: Path
+    ) -> None:
+        """Runner calls on_phase_complete after each phase."""
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
+
+        captured_phase_completes: list[str] = []
+
+        class MockNarrator:
+            def output(self, report: TickReport) -> None:
+                pass
+
+            def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+                pass
+
+            def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+                captured_phase_completes.append(phase_name)
+
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2a(sim, cfg, client, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2b(sim, cfg, client, master_results, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase3(sim, cfg, master_results):
+            return PhaseResult(success=True, data={"pending_memories": {}})
+
+        async def mock_phase4(sim, cfg, client, memories):
+            return PhaseResult(success=True, data=None)
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a),
+            patch("src.runner.execute_phase2b", mock_phase2b),
+            patch("src.runner.execute_phase3", mock_phase3),
+            patch("src.runner.execute_phase4", mock_phase4),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [MockNarrator()])
+            await runner.run_tick(simulation, sim_path)
+
+        # on_phase_complete should be called 5 times (one per phase)
+        assert len(captured_phase_completes) == 5
+        assert captured_phase_completes == ["phase1", "phase2a", "phase2b", "phase3", "phase4"]
+
+    @pytest.mark.asyncio
+    async def test_runner_narrator_on_tick_start_error_isolated(
+        self, mock_config: Config, tmp_path: Path
+    ) -> None:
+        """Narrator error in on_tick_start doesn't stop tick execution."""
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
+
+        class FailingNarrator:
+            def output(self, report: TickReport) -> None:
+                pass
+
+            def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+                raise RuntimeError("on_tick_start crashed")
+
+            def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+                pass
+
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2a(sim, cfg, client, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2b(sim, cfg, client, master_results, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase3(sim, cfg, master_results):
+            return PhaseResult(success=True, data={"pending_memories": {}})
+
+        async def mock_phase4(sim, cfg, client, memories):
+            return PhaseResult(success=True, data=None)
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a),
+            patch("src.runner.execute_phase2b", mock_phase2b),
+            patch("src.runner.execute_phase3", mock_phase3),
+            patch("src.runner.execute_phase4", mock_phase4),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [FailingNarrator()])
+            result = await runner.run_tick(simulation, sim_path)
+
+        # Tick should still succeed despite narrator failure
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_runner_narrator_on_phase_complete_error_isolated(
+        self, mock_config: Config, tmp_path: Path
+    ) -> None:
+        """Narrator error in on_phase_complete doesn't stop tick execution."""
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
+
+        class FailingNarrator:
+            def output(self, report: TickReport) -> None:
+                pass
+
+            def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+                pass
+
+            def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+                raise RuntimeError("on_phase_complete crashed")
+
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2a(sim, cfg, client, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2b(sim, cfg, client, master_results, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase3(sim, cfg, master_results):
+            return PhaseResult(success=True, data={"pending_memories": {}})
+
+        async def mock_phase4(sim, cfg, client, memories):
+            return PhaseResult(success=True, data=None)
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a),
+            patch("src.runner.execute_phase2b", mock_phase2b),
+            patch("src.runner.execute_phase3", mock_phase3),
+            patch("src.runner.execute_phase4", mock_phase4),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [FailingNarrator()])
+            result = await runner.run_tick(simulation, sim_path)
+
+        # Tick should still succeed despite narrator failure
+        assert result.success is True

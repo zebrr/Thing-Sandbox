@@ -11,6 +11,25 @@ from src.narrators import BOX_CHAR, HEADER_WIDTH, ConsoleNarrator, Narrator
 
 
 @dataclass
+class MockPhaseData:
+    """Mock PhaseData for testing narrators without importing runner."""
+
+    duration: float = 0.0
+    stats: Any = None
+    data: Any = None
+
+
+@dataclass
+class MockSimulation:
+    """Mock Simulation for testing narrators without importing storage."""
+
+    id: str = "test-sim"
+    current_tick: int = 0
+    characters: dict[str, Any] = field(default_factory=dict)
+    locations: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class MockTickReport:
     """Mock TickReport for testing narrators without importing runner."""
 
@@ -39,14 +58,24 @@ class TestNarratorProtocol:
         assert callable(narrator.output)
 
     def test_custom_narrator_satisfies_protocol(self) -> None:
-        """Custom class with output method satisfies Narrator protocol."""
+        """Custom class with all protocol methods satisfies Narrator protocol."""
 
         class CustomNarrator:
             def output(self, report: MockTickReport) -> None:
                 pass
 
+            def on_tick_start(
+                self, sim_id: str, tick_number: int, simulation: MockSimulation
+            ) -> None:
+                pass
+
+            def on_phase_complete(self, phase_name: str, phase_data: MockPhaseData) -> None:
+                pass
+
         narrator: Narrator = CustomNarrator()  # type: ignore[assignment]
         assert hasattr(narrator, "output")
+        assert hasattr(narrator, "on_tick_start")
+        assert hasattr(narrator, "on_phase_complete")
 
 
 class TestConsoleNarrator:
@@ -292,3 +321,17 @@ class TestConsoleNarrator:
         assert "----- The Rusty Tankard (tavern) -----" not in output
         assert "Bob enters the tavern." not in output
         assert "[No narrative]" not in output
+
+    def test_console_narrator_on_tick_start_noop(self) -> None:
+        """on_tick_start does nothing but doesn't raise."""
+        narrator = ConsoleNarrator()
+        simulation = MockSimulation()
+        # Should not raise
+        narrator.on_tick_start("test-sim", 42, simulation)  # type: ignore[arg-type]
+
+    def test_console_narrator_on_phase_complete_noop(self) -> None:
+        """on_phase_complete does nothing but doesn't raise."""
+        narrator = ConsoleNarrator()
+        phase_data = MockPhaseData(duration=1.0, stats=None, data={})
+        # Should not raise
+        narrator.on_phase_complete("phase1", phase_data)  # type: ignore[arg-type]

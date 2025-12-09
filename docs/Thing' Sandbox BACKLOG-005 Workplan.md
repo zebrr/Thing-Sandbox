@@ -351,7 +351,8 @@ logger = logging.getLogger(__name__)
 
 ## Этап 3: TelegramNarrator (business logic)
 
-Форматирование и отправка tick report в Telegram. Реализует интерфейс `Narrator`.
+Форматирование и отправка tick report в Telegram. Реализует `Narrator` protocol.
+Добавляется в `src/narrators.py` согласно архитектуре.
 
 **STATUS: не начат**
 
@@ -359,14 +360,14 @@ logger = logging.getLogger(__name__)
 
 - Архитектура: `docs/Thing' Sandbox Architecture.md`
 - Telegram API Reference: `docs/Thing' Sandbox Telegram API Reference.md`
-- Спецификация Config: `docs/specs/core_config.md` (после Этапа 1)
-- Спецификация TelegramClient: `docs/specs/util_telegram_client.md` (после Этапа 2)
+- Спецификация Config: `docs/specs/core_config.md`
+- Спецификация TelegramClient: `docs/specs/util_telegram_client.md`
 - Спецификация Narrators: `docs/specs/core_narrators.md`
 - Спецификация Runner: `docs/specs/core_runner.md`
 
 ### Задачи
 
-1. Написать спецификацию `docs/specs/core_telegram_narrator.md`
+1. Обновить спецификацию `docs/specs/core_narrators.md`
 2. Реализовать `TelegramNarrator` в `src/narrators.py`
 3. Написать тесты
 
@@ -374,6 +375,11 @@ logger = logging.getLogger(__name__)
 
 ```python
 class TelegramNarrator:
+    """Sends tick report to Telegram channel.
+    
+    Implements Narrator protocol. Uses TelegramClient for transport.
+    """
+    
     def __init__(
         self,
         client: TelegramClient,
@@ -395,15 +401,48 @@ class TelegramNarrator:
     def output(self, report: TickReport) -> None:
         """Output tick report to Telegram.
         
-        Runs async send in sync context via asyncio.run().
+        Implements Narrator protocol. Calls async TelegramClient
+        via asyncio in separate thread (runner calls from async context).
         
         Args:
             report: TickReport from completed tick.
         """
-    
-    async def _send_async(self, report: TickReport) -> None:
-        """Async implementation of output."""
 ```
+
+### Async/Sync мост
+
+Runner вызывает `output()` из async контекста (`run_tick`). TelegramClient — async.
+Решение: запуск async кода в отдельном потоке через `concurrent.futures.ThreadPoolExecutor`.
+
+```python
+def output(self, report: TickReport) -> None:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(asyncio.run, self._send_async(report))
+        future.result()
+```
+
+### Helper функция
+
+```python
+def escape_html(text: str) -> str:
+    """Escape HTML special characters for Telegram.
+    
+    Escapes: < > &
+    """
+```
+
+### Источники данных из TickReport
+
+- `report.sim_id` — ID симуляции
+- `report.tick_number` — номер такта
+- `report.phases["phase1"].data` — dict[str, IntentionResponse]
+- `report.phases["phase1"].stats` — BatchStats для intentions
+- `report.phases["phase1"].duration` — время Phase 1
+- `report.narratives` — dict[str, str] (loc_id → narrative text)
+- `report.location_names` — dict[str, str] (loc_id → display name)
+- `report.simulation.characters[char_id].identity.name` — имя персонажа
+- `report.phases["phase2a"].stats` + `report.phases["phase2b"].stats` — stats для narratives
+- `report.phases["phase2a"].duration` + `report.phases["phase2b"].duration` — время Phase 2
 
 ### Форматы сообщений
 
@@ -418,17 +457,26 @@ Approach the cylinder to examine it more closely...
 Interview locals about what they witnessed...
 
 ───
-📊 <i>4,200 tok · 1,100 reason · 2.1s</i>
+📊 <i>Phase 1: 4,200 tok · 1,100 reason · 2.1s</i>
 ```
 
 **Intentions (mode=full/full_stats, group_intentions=false):**
+
+Отправляется N сообщений. Stats footer только на последнем:
 ```html
-🎯 <b>demo-sim — tick #42 | Intentions: Ogilvy</b>
+🎯 <b>demo-sim — tick #42 | Ogilvy</b>
 
 Approach the cylinder to examine it more closely...
+```
+
+Последнее сообщение:
+```html
+🎯 <b>demo-sim — tick #42 | Henderson</b>
+
+Interview locals about what they witnessed...
 
 ───
-📊 <i>2,100 tok · 550 reason · 1.0s</i>
+📊 <i>Phase 1: 4,200 tok · 1,100 reason · 2.1s</i>
 ```
 
 **Narratives (group_narratives=true):**
@@ -442,92 +490,97 @@ Ogilvy cautiously approaches the pit...
 Henderson scribbles notes furiously...
 
 ───
-📊 <i>8,250 tok · 2,100 reason · 4.1s</i>
+📊 <i>Phase 2: 8,250 tok · 2,100 reason · 4.1s</i>
 ```
 
 **Narratives (group_narratives=false):**
+
+Отправляется M сообщений. Stats footer только на последнем:
 ```html
-📖 <b>demo-sim — tick #42 | Narratives: Horsell Common</b>
+📖 <b>demo-sim — tick #42 | Horsell Common</b>
 
 Ogilvy cautiously approaches the pit...
+```
+
+Последнее сообщение:
+```html
+📖 <b>demo-sim — tick #42 | The Red Lion Inn</b>
+
+Henderson scribbles notes furiously...
 
 ───
-📊 <i>4,125 tok · 1,050 reason · 2.0s</i>
+📊 <i>Phase 2: 8,250 tok · 2,100 reason · 4.1s</i>
 ```
 
 ### Stats Footer
 
-Добавляется к **КАЖДОМУ** сообщению (не только к последнему).
+**Показывается:**
+- Только для режимов `_stats` (narratives_stats, full_stats)
+- Только на последнем сообщении каждого типа (intentions / narratives)
+- Для narratives: сумма Phase 2a + Phase 2b stats и durations
 
-**Формат (режимы _stats):**
+**Формат:**
 ```html
 
 ───
-📊 <i>12,450 tok · 3,200 reason · 6.2s</i>
+📊 <i>Phase N: 12,450 tok · 3,200 reason · 6.2s</i>
 ```
 
-**Примечание:** Stats показывает данные релевантные конкретному сообщению:
-- Для grouped intentions — сумма по всем персонажам Phase 1
-- Для single intention — данные одного персонажа
-- Для grouped narratives — сумма Phase 2a + Phase 2b
-- Для single narrative — данные одной локации
+### Логирование
 
-### Источники данных
+```python
+logger = logging.getLogger(__name__)
+```
 
-- Intentions: `report.phases["phase1"].data` (dict char_id → IntentionResponse)
-- Narratives: `report.narratives` (dict loc_id → narrative text)
-- Location names: `report.location_names` (dict loc_id → display name)
-- Character names: `report.simulation.characters[char_id].identity.name`
-- Stats: `report.phases["phaseX"].stats` (BatchStats) и `report.phases["phaseX"].duration`
+- **DEBUG**: форматирование сообщений
+- **INFO**: `📨 telegram: Sent 2 intentions, 1 narrative to chat -100123`
+- **WARNING**: ошибка отправки (продолжаем работу)
 
 ### Обработка ошибок
 
-- Ошибки TelegramClient логируются, но не пробрасываются
-- Narrator.output() не должен бросать исключения
-- При ошибке отправки — warning в лог, продолжаем
+- Ошибки TelegramClient логируются как WARNING
+- `output()` НЕ бросает исключения (как и ConsoleNarrator)
+- При ошибке отправки — продолжаем со следующим сообщением
 
 ### Тесты
 
-- Unit тесты с mocked TelegramClient:
-  - Формат intentions (grouped)
-  - Формат intentions (per-character)
-  - Формат narratives (grouped)
-  - Формат narratives (per-location)
-  - Stats footer присутствует для _stats режимов
-  - Stats footer отсутствует для non-stats режимов
-  - mode=narratives → intentions не отправляются
+**Unit тесты с mocked TelegramClient:**
+- `test_output_intentions_grouped` — один вызов send_message для intentions
+- `test_output_intentions_per_character` — N вызовов send_message
+- `test_output_narratives_grouped` — один вызов send_message для narratives
+- `test_output_narratives_per_location` — M вызовов send_message
+- `test_stats_footer_only_on_last` — footer на последнем сообщении
+- `test_stats_footer_only_for_stats_modes` — нет footer для non-stats режимов
+- `test_mode_narratives_skips_intentions` — mode=narratives не отправляет intentions
+- `test_escape_html` — экранирование < > &
+- `test_error_handling` — ошибка client не бросает exception
+- `test_narrator_protocol` — TelegramNarrator satisfies Narrator protocol
 
 ### Артефакты
 
 - Задание: `docs/tasks/TS-BACKLOG-005-NARRATOR-001.md`
 - Отчёт: `docs/tasks/TS-BACKLOG-005-NARRATOR-001_REPORT.md`
-- Спецификация: `docs/specs/core_telegram_narrator.md` (новая)
-- Модуль: `src/narrators.py` (обновить — добавить TelegramNarrator)
 - Спецификация: `docs/specs/core_narrators.md` (обновить)
-- Тесты: `tests/unit/test_telegram_narrator.py` (новый)
+- Модуль: `src/narrators.py` (обновить — добавить TelegramNarrator, escape_html)
 - Тесты: `tests/unit/test_narrators.py` (обновить)
 
 ---
 
-## Этап 4: Интеграция в Runner
+## Этап 4: Интеграция в CLI
 
-Подключение TelegramNarrator к TickRunner через CLI.
+Подключение TelegramNarrator в CLI. Runner не меняется — он уже вызывает все narrators через `_call_narrators()`.
 
 **STATUS: не начат**
 
 ### References
 
-- Архитектура: `docs/Thing' Sandbox Architecture.md`
-- Спецификация Config: `docs/specs/core_config.md` (после Этапа 1)
-- Спецификация TelegramClient: `docs/specs/util_telegram_client.md` (после Этапа 2)
-- Спецификация TelegramNarrator: `docs/specs/core_telegram_narrator.md` (после Этапа 3)
-- Спецификация Narrators: `docs/specs/core_narrators.md` (после Этапа 3)
-- Спецификация Runner: `docs/specs/core_runner.md`
+- Спецификация Config: `docs/specs/core_config.md`
+- Спецификация TelegramClient: `docs/specs/util_telegram_client.md`
+- Спецификация Narrators: `docs/specs/core_narrators.md`
 - Спецификация CLI: `docs/specs/core_cli.md`
 
 ### Изменения в cli.py
 
-**Команда run:**
 ```python
 @app.command()
 def run(sim_id: str) -> None:
@@ -535,13 +588,12 @@ def run(sim_id: str) -> None:
     sim_path = config.project_root / "simulations" / sim_id
     simulation = load_simulation(sim_path)
     
-    # Resolve output config with simulation overrides
     output_config = config.resolve_output(simulation)
     
     # Build narrators list
     narrators: list[Narrator] = []
     
-    # Console narrator (always, respects show_narratives)
+    # Console narrator (always)
     narrators.append(ConsoleNarrator(show_narratives=output_config.console.show_narratives))
     
     # Telegram narrator (if enabled and mode != none)
@@ -549,6 +601,7 @@ def run(sim_id: str) -> None:
         if not config.telegram_bot_token:
             typer.echo("Warning: Telegram enabled but TELEGRAM_BOT_TOKEN not set", err=True)
         else:
+            from src.narrators import TelegramNarrator
             from src.utils.telegram_client import TelegramClient
             
             client = TelegramClient(config.telegram_bot_token)
@@ -561,14 +614,8 @@ def run(sim_id: str) -> None:
             ))
     
     runner = TickRunner(config, narrators)
-    await runner.run_tick(simulation, sim_path)
+    asyncio.run(runner.run_tick(simulation, sim_path))
 ```
-
-### Error Handling
-
-- Отсутствует `TELEGRAM_BOT_TOKEN` при `telegram.enabled=true` → warning, продолжаем без Telegram
-- Ошибки TelegramNarrator → логируем, симуляция продолжается
-- Telegram недоступен → retry в TelegramClient, после исчерпания попыток — warning
 
 ### Обновление .env.example
 
@@ -580,11 +627,18 @@ OPENAI_API_KEY=sk-...
 TELEGRAM_BOT_TOKEN=123456789:ABC...
 ```
 
+### Error Handling
+
+- Отсутствует `TELEGRAM_BOT_TOKEN` при `telegram.enabled=true` → warning, продолжаем без Telegram
+- Ошибки TelegramNarrator → логируем, симуляция продолжается (runner изолирует ошибки narrators)
+- Telegram недоступен → retry в TelegramClient, после исчерпания попыток — warning
+
 ### Тесты
 
-- Integration test: run с telegram.enabled=true но без токена → warning, tick завершается
-- Integration test: run с telegram.enabled=true и mock client → narrator вызывается
-- Unit test cli: проверка создания TelegramNarrator при правильном конфиге
+- `test_cli_creates_telegram_narrator` — при правильном конфиге TelegramNarrator добавляется в narrators
+- `test_cli_warns_no_token` — warning если enabled но нет токена
+- `test_cli_telegram_disabled` — TelegramNarrator не создаётся при enabled=false
+- `test_cli_telegram_mode_none` — TelegramNarrator не создаётся при mode=none
 
 ### Артефакты
 
@@ -593,9 +647,7 @@ TELEGRAM_BOT_TOKEN=123456789:ABC...
 - Модули: `src/cli.py` (обновить)
 - Конфиг: `.env.example` (обновить)
 - Спецификации: `docs/specs/core_cli.md` (обновить)
-- Спецификации: `docs/specs/core_runner.md` (обновить)
 - Тесты: `tests/unit/test_cli.py` (обновить)
-- Тесты: `tests/integration/test_telegram_integration.py` (новый)
 
 ---
 

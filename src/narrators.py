@@ -30,7 +30,8 @@ import sys
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from src.runner import TickReport
+    from src.runner import PhaseData, TickReport
+    from src.utils.storage import Simulation
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,10 @@ class Narrator(Protocol):
         >>> class MyNarrator:
         ...     def output(self, report: TickReport) -> None:
         ...         print(report.tick_number)
+        ...     def on_tick_start(self, sim_id, tick_number, simulation) -> None:
+        ...         pass
+        ...     def on_phase_complete(self, phase_name, phase_data) -> None:
+        ...         pass
     """
 
     def output(self, report: TickReport) -> None:
@@ -53,6 +58,25 @@ class Narrator(Protocol):
 
         Args:
             report: TickReport from completed tick.
+        """
+        ...
+
+    def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
+        """Called when tick execution begins.
+
+        Args:
+            sim_id: Simulation identifier.
+            tick_number: Tick number about to execute (current_tick + 1).
+            simulation: Simulation instance with characters and locations.
+        """
+        ...
+
+    def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
+        """Called after each phase completes successfully.
+
+        Args:
+            phase_name: Name of completed phase (phase1, phase2a, phase2b, phase3, phase4).
+            phase_data: Phase execution data including duration, stats, and output.
         """
         ...
 
@@ -155,3 +179,22 @@ class ConsoleNarrator:
             # Fallback: replace unencodable characters
             encoded = text.encode(sys.stdout.encoding or "utf-8", errors="replace")
             print(encoded.decode(sys.stdout.encoding or "utf-8", errors="replace"))
+
+    def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
+        """No-op implementation for tick start event.
+
+        Args:
+            sim_id: Simulation identifier.
+            tick_number: Tick number about to execute.
+            simulation: Simulation instance (ignored).
+        """
+        pass
+
+    def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
+        """No-op implementation for phase complete event.
+
+        Args:
+            phase_name: Name of completed phase.
+            phase_data: Phase execution data.
+        """
+        pass

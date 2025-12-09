@@ -96,14 +96,20 @@ Execute one complete tick of simulation.
 1. Receive simulation (already loaded by CLI)
 2. Validate status == "paused"
 3. Set status = "running" (in memory only)
+3b. Notify narrators via _notify_tick_start(sim_id, tick_number, simulation)
 4. Create entity dicts for LLM clients (_create_entity_dicts)
 5. Initialize tick statistics (_tick_stats = BatchStats())
 6. Execute phases (_execute_phases):
    6.1. Phase 1 — character intentions (N requests, char client)
+        → Notify narrators via _notify_phase_complete("phase1", ...)
    6.2. Phase 2a — scene arbitration (L requests, loc client)
+        → Notify narrators via _notify_phase_complete("phase2a", ...)
    6.3. Phase 2b — narrative generation (L requests, stub)
+        → Notify narrators via _notify_phase_complete("phase2b", ...)
    6.4. Phase 3 — apply results (0 requests)
+        → Notify narrators via _notify_phase_complete("phase3", ...)
    6.5. Phase 4 — memory update (N requests, char client)
+        → Notify narrators via _notify_phase_complete("phase4", ...)
 7. Sync _openai data back to simulation models (_sync_openai_data)
 8. Aggregate usage into simulation._openai (_aggregate_simulation_usage)
 9. Increment current_tick
@@ -190,7 +196,28 @@ Called after each LLM-using phase to accumulate batch stats.
 
 Execute all phases sequentially.
 
-Creates separate LLM clients for character and location phases. Logs statistics after each phase. Raises `PhaseError` if any phase returns `success=False`.
+Creates separate LLM clients for character and location phases. Logs statistics after each phase. Notifies narrators via `_notify_phase_complete` after each phase. Raises `PhaseError` if any phase returns `success=False`.
+
+### _notify_tick_start(sim_id: str, tick_number: int, simulation: Simulation) -> None
+
+Notify all narrators that tick is starting.
+
+- **Input**:
+  - sim_id — Simulation identifier
+  - tick_number — Tick number about to execute
+  - simulation — Simulation instance
+- **Side effects**: Calls `on_tick_start` on each narrator
+- **Error handling**: Narrator exceptions are caught, logged, and don't affect tick execution
+
+### _notify_phase_complete(phase_name: str, phase_data: PhaseData) -> None
+
+Notify all narrators that phase completed.
+
+- **Input**:
+  - phase_name — Name of completed phase (phase1, phase2a, phase2b, phase3, phase4)
+  - phase_data — PhaseData with duration, stats, and output
+- **Side effects**: Calls `on_phase_complete` on each narrator
+- **Error handling**: Narrator exceptions are caught, logged, and don't affect tick execution
 
 ---
 
@@ -323,6 +350,12 @@ except PhaseError as e:
 **_aggregate_simulation_usage Tests (TestAggregateSimulationUsage):**
 - test_aggregate_sums_all_entities — sums usage from all characters and locations
 - test_aggregate_creates_extra_if_none — creates __pydantic_extra__ if not present
+
+**Narrator Lifecycle Tests (TestNarratorLifecycleNotifications):**
+- test_runner_calls_on_tick_start — verifies on_tick_start called on all narrators
+- test_runner_calls_on_phase_complete_for_each_phase — verifies 5 calls (one per phase)
+- test_runner_narrator_on_tick_start_error_isolated — error doesn't stop tick
+- test_runner_narrator_on_phase_complete_error_isolated — error doesn't stop tick
 
 ### Integration Tests
 

@@ -20,17 +20,48 @@ class Narrator(Protocol):
     def output(self, report: TickReport) -> None:
         """Output tick report to destination."""
         ...
+
+    def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
+        """Called when tick execution begins."""
+        ...
+
+    def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
+        """Called after each phase completes successfully."""
+        ...
 ```
 
-**Input:**
-- report — TickReport from completed tick
+#### Narrator.output(report: TickReport) -> None
 
-**Side effects:**
-- Writes to destination (stdout, network)
+Output tick report to destination.
+
+- **Input**: report — TickReport from completed tick
+- **Side effects**: Writes to destination (stdout, network)
+
+#### Narrator.on_tick_start(sim_id: str, tick_number: int, simulation: Simulation) -> None
+
+Called when tick execution begins (after status set to "running").
+
+- **Input**:
+  - sim_id — Simulation identifier
+  - tick_number — Tick number about to execute (current_tick + 1)
+  - simulation — Simulation instance with characters and locations
+- **Side effects**: Implementation-specific (e.g., storing simulation reference)
+- **Note**: Default implementations should be no-op
+
+#### Narrator.on_phase_complete(phase_name: str, phase_data: PhaseData) -> None
+
+Called after each phase completes successfully.
+
+- **Input**:
+  - phase_name — Name of completed phase (phase1, phase2a, phase2b, phase3, phase4)
+  - phase_data — PhaseData with duration, stats, and phase output
+- **Side effects**: Implementation-specific (e.g., progress display)
+- **Note**: Default implementations should be no-op
 
 **Error handling:**
 - Narrator errors are logged but don't affect tick success
 - Failed narrator doesn't prevent other narrators from running
+- Errors in on_tick_start and on_phase_complete don't stop tick execution
 
 ### ConsoleNarrator
 
@@ -54,6 +85,14 @@ Print narratives to stdout.
 **Behavior:**
 - When `show_narratives=True` (default): full output with location names and narratives
 - When `show_narratives=False`: only header and footer, no narrative content
+
+#### ConsoleNarrator.on_tick_start(...) -> None
+
+No-op implementation. Does nothing.
+
+#### ConsoleNarrator.on_phase_complete(...) -> None
+
+No-op implementation. Does nothing.
 
 ---
 
@@ -124,7 +163,7 @@ TelegramNarrator network failures:
 
 - **Standard Library**: logging, sys, typing (Protocol)
 - **External**: None
-- **Internal**: runner (TickReport — via TYPE_CHECKING)
+- **Internal**: runner (TickReport, PhaseData — via TYPE_CHECKING), utils.storage (Simulation — via TYPE_CHECKING)
 
 ---
 
@@ -218,6 +257,8 @@ class TickRunner:
 - test_narrator_protocol — ConsoleNarrator satisfies Protocol
 - test_console_narrator_show_narratives_default_true — narratives shown by default
 - test_console_narrator_show_narratives_false — header/footer only when show_narratives=False
+- test_console_narrator_on_tick_start_noop — on_tick_start does nothing but doesn't raise
+- test_console_narrator_on_phase_complete_noop — on_phase_complete does nothing but doesn't raise
 
 ### Integration Tests
 

@@ -208,6 +208,9 @@ class TickRunner:
         # Step 3: Set status to running (in memory)
         simulation.status = "running"
 
+        # Step 3b: Notify narrators of tick start
+        self._notify_tick_start(sim_id, simulation.current_tick + 1, simulation)
+
         # Step 4: Create entity dicts for LLM clients
         self._create_entity_dicts(simulation)
 
@@ -427,6 +430,7 @@ class TickRunner:
             f"{stats.total_tokens:,}",
             f"{stats.reasoning_tokens:,}",
         )
+        self._notify_phase_complete("phase1", self._phase_data["phase1"])
 
         # Extract intention strings for Phase 2a/2b
         intentions_str = {char_id: resp.intention for char_id, resp in result1.data.items()}
@@ -451,6 +455,7 @@ class TickRunner:
             f"{stats.total_tokens:,}",
             f"{stats.reasoning_tokens:,}",
         )
+        self._notify_phase_complete("phase2a", self._phase_data["phase2a"])
 
         # Phase 2b: Narrative generation (locations)
         phase2b_start = time.time()
@@ -474,6 +479,7 @@ class TickRunner:
             f"{stats.total_tokens:,}",
             f"{stats.reasoning_tokens:,}",
         )
+        self._notify_phase_complete("phase2b", self._phase_data["phase2b"])
 
         # Extract narratives for TickResult
         self._narratives: dict[str, str] = {}
@@ -492,6 +498,7 @@ class TickRunner:
             data=result3.data,
         )
         logging.getLogger("src.phases.phase3").info("Completed (results applied)")
+        self._notify_phase_complete("phase3", self._phase_data["phase3"])
 
         # Phase 4: Memory update (characters)
         phase4_start = time.time()
@@ -516,6 +523,7 @@ class TickRunner:
             f"{stats.total_tokens:,}",
             f"{stats.reasoning_tokens:,}",
         )
+        self._notify_phase_complete("phase4", self._phase_data["phase4"])
 
     def _accumulate_tick_stats(self, phase_stats: BatchStats) -> None:
         """Add phase statistics to tick totals.
@@ -543,3 +551,34 @@ class TickRunner:
                 narrator.output(report)
             except Exception as e:
                 logger.error("Narrator %s failed: %s", type(narrator).__name__, e)
+
+    def _notify_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
+        """Notify all narrators that tick is starting.
+
+        Narrator failures are logged but don't affect tick execution.
+
+        Args:
+            sim_id: Simulation identifier.
+            tick_number: Tick number about to execute.
+            simulation: Simulation instance.
+        """
+        for narrator in self._narrators:
+            try:
+                narrator.on_tick_start(sim_id, tick_number, simulation)
+            except Exception as e:
+                logger.error("Narrator %s on_tick_start failed: %s", type(narrator).__name__, e)
+
+    def _notify_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
+        """Notify all narrators that phase completed.
+
+        Narrator failures are logged but don't affect tick execution.
+
+        Args:
+            phase_name: Name of completed phase.
+            phase_data: Phase execution data.
+        """
+        for narrator in self._narrators:
+            try:
+                narrator.on_phase_complete(phase_name, phase_data)
+            except Exception as e:
+                logger.error("Narrator %s on_phase_complete failed: %s", type(narrator).__name__, e)
