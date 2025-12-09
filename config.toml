@@ -5,7 +5,7 @@ default_interval = 600
 default_ticks_limit = 0
 
 [phase1]
-model = "gpt-5-mini-2025-08-07"
+model = "gpt-5.1-2025-11-13"
 is_reasoning = true
 max_context_tokens = 400000
 max_completion = 128000
@@ -28,10 +28,10 @@ reasoning_effort = "medium"
 reasoning_summary = "auto"
 # verbosity = "medium"
 truncation = "auto"
-response_chain_depth = 2
+response_chain_depth = 1
 
 [phase2b]
-model = "gpt-5-mini-2025-08-07"
+model = "gpt-5.1-2025-11-13"
 is_reasoning = true
 max_context_tokens = 400000
 max_completion = 128000
@@ -41,7 +41,7 @@ reasoning_effort = "medium"
 reasoning_summary = "auto"
 # verbosity = "medium"
 truncation = "auto"
-response_chain_depth = 0
+response_chain_depth = 1
 
 [phase4]
 model = "gpt-5-mini-2025-08-07"
