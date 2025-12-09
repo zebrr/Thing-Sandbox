@@ -187,7 +187,7 @@ Runner.run_tick(simulation, sim_path)  # simulation уже загружена
 
 Async HTTP клиент для Telegram Bot API. Только transport — без бизнес-логики форматирования.
 
-**STATUS: не начат**
+**STATUS: ЗАВЕРШЁН**
 
 ### References
 
@@ -211,6 +211,8 @@ class TelegramClient:
         bot_token: str,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        connect_timeout: float = 5.0,
+        read_timeout: float = 30.0,
     ) -> None:
         """Initialize Telegram client.
         
@@ -218,6 +220,8 @@ class TelegramClient:
             bot_token: Telegram bot token from BotFather.
             max_retries: Max retry attempts for failed requests.
             retry_delay: Base delay between retries (exponential backoff).
+            connect_timeout: Connection timeout in seconds.
+            read_timeout: Read timeout in seconds.
         """
     
     async def send_message(
@@ -228,7 +232,7 @@ class TelegramClient:
     ) -> bool:
         """Send text message to chat.
         
-        Automatically splits long messages by paragraphs.
+        Automatically splits long messages using split_message().
         
         Args:
             chat_id: Numeric chat/channel ID.
@@ -241,6 +245,34 @@ class TelegramClient:
     
     async def close(self) -> None:
         """Close HTTP client."""
+    
+    async def __aenter__(self) -> "TelegramClient":
+        """Async context manager entry."""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Async context manager exit — closes HTTP client."""
+        await self.close()
+```
+
+### Функция split_message
+
+Публичная функция на уровне модуля (не метод класса) для удобства тестирования.
+
+```python
+def split_message(
+    text: str,
+    max_length: int = 3896,
+) -> list[str]:
+    """Разбивает текст на части для Telegram.
+    
+    Args:
+        text: Исходный текст.
+        max_length: Максимальная длина части (с учётом suffix).
+    
+    Returns:
+        Список частей с suffix (M/N) если частей > 1.
+    """
 ```
 
 ### Разбивка длинных сообщений
@@ -249,7 +281,7 @@ class TelegramClient:
 **Safe margin:** 200 символов → рабочий лимит 3896.
 
 **Алгоритм:**
-1. Если `len(text) <= 3896` → отправляем как есть
+1. Если `len(text) <= 3896` → возвращаем `[text]` без suffix
 2. Иначе разбиваем по абзацам (`\n\n`)
 3. Собираем части, пока не превысим лимит
 4. Если один абзац > 3896 → режем по предложениям (`.!?` + пробел)
@@ -263,10 +295,26 @@ class TelegramClient:
 
 ### Error Handling
 
+**Простой подход без кастомных exceptions:**
+
 - Retry с exponential backoff: `delay * (2 ** attempt)`
-- После `max_retries` неудачных попыток → логируем ошибку, возвращаем `False`
-- Rate limiting (429) → retry с delay из `Retry-After` header
-- Не бросаем исключения — симуляция не должна падать из-за Telegram
+- Rate limiting (429) → retry с delay из `Retry-After` header (или default 1s)
+- 5xx errors → retry
+- После `max_retries` неудачных попыток → логируем ERROR, возвращаем `False`
+- **Не бросаем исключения** — симуляция не должна падать из-за Telegram
+- Все ошибки обрабатываются внутри `try/except Exception`
+
+### Логирование
+
+Используется стандартный `logging` (как в остальном проекте):
+
+```python
+logger = logging.getLogger(__name__)
+```
+
+- **DEBUG**: каждый отправленный запрос (`chat_id`, длина текста, `part M/N`)
+- **WARNING**: retry attempt (`attempt`, `delay`, `status_code`)
+- **ERROR**: все попытки исчерпаны (`chat_id`, `last_error`)
 
 ### HTTP клиент
 
@@ -274,13 +322,21 @@ class TelegramClient:
 
 ### Тесты
 
-- Unit тесты с mocked httpx responses:
-  - Успешная отправка
-  - Retry при 429
-  - Retry при 5xx
-  - Разбивка длинного сообщения
-  - Suffix `(M/N)` корректный
-- Integration тест (требует бота и канал) — опционально, маркер `@pytest.mark.telegram`
+**Unit тесты split_message (без моков):**
+- Короткий текст → `[text]` без suffix
+- Длинный текст с абзацами → разбивка по абзацам + suffix
+- Один очень длинный абзац → разбивка по предложениям
+- Одно очень длинное предложение → разбивка по словам
+- Suffix `(M/N)` корректный
+
+**Unit тесты TelegramClient с mocked httpx:**
+- Успешная отправка
+- Retry при 429 (с Retry-After)
+- Retry при 5xx
+- Все попытки исчерпаны → возвращает False
+- Context manager (`async with`)
+
+**Integration тест** (требует бота и канал) — опционально, маркер `@pytest.mark.telegram`
 
 ### Артефакты
 
@@ -288,6 +344,7 @@ class TelegramClient:
 - Отчёт: `docs/tasks/TS-BACKLOG-005-CLIENT-001_REPORT.md`
 - Спецификация: `docs/specs/util_telegram_client.md` (новая)
 - Модуль: `src/utils/telegram_client.py` (новый)
+- Зависимости: `requirements.txt` (проверить httpx)
 - Тесты: `tests/unit/test_telegram_client.py` (новый)
 
 ---

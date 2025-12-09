@@ -33,4 +33,5 @@ addopts = "--ignore-glob=*_backup_*"
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "telegram: marks tests that require Telegram API credentials",
 ]

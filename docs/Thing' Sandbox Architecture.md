@@ -40,7 +40,8 @@ thing'-sandbox/
 │   │   │   ├── base.py       # общие типы (AdapterResponse, ResponseUsage)
 │   │   │   └── openai.py     # OpenAI Responses API adapter
 │   │   ├── prompts.py        # рендеринг промптов (Jinja2)
-│   │   └── storage.py        # чтение/запись симуляций
+│   │   ├── storage.py        # чтение/запись симуляций
+│   │   └── telegram_client.py # HTTP клиент для Telegram Bot API
 │   ├── __init__.py
 │   ├── cli.py                # точка входа (typer)
 │   ├── config.py             # загрузка конфигов
@@ -317,6 +318,7 @@ python -m src.cli reset demo-sim
 | OpenAI Adapter | `utils/llm_adapters/openai.py` | Транспорт для OpenAI Responses API |
 | Prompt Renderer | `utils/prompts.py` | Загрузка и рендеринг Jinja2 промптов |
 | Storage | `utils/storage.py` | Чтение/запись симуляции |
+| Telegram Client | `utils/telegram_client.py` | HTTP клиент для Telegram Bot API |
 | Exit Codes | `utils/exit_codes.py` | Стандартные коды завершения |
 | Narrators | `narrators.py` | Вывод: console, telegram, web |
 | TickLogger | `tick_logger.py` | Детальное логирование тиков в markdown |
@@ -465,6 +467,7 @@ YYYY.MM.DD HH:MM:SS | LEVEL   | 🏷️ module: message
 | 🔧 | phase3 | Применение результатов |
 | 🧠 | phase4 | Память |
 | 🤖 | llm | LLM клиент и адаптеры |
+| 💬 | telegram | Telegram клиент |
 | 💾 | storage | Чтение/запись |
 | 📢 | narrators | Вывод |
 | 📝 | prompts | Рендеринг промптов |
@@ -519,8 +522,8 @@ YYYY.MM.DD HH:MM:SS | LEVEL   | 🏷️ module: message
 | Валидация/модели | Pydantic v2 | Модели данных, загрузка конфигов |
 | LLM | openai (официальный SDK) | Structured output из коробки |
 | Шаблоны промптов | Jinja2 | Рендеринг промптов с подстановками |
+| HTTP клиент | httpx | Async HTTP для Telegram Bot API |
 | Web-сервер | FastAPI | Async, websockets, Pydantic-native |
-| Telegram | python-telegram-bot | Зрелая библиотека (альтернатива: aiogram) |
 
 ### Dev-инструменты
 

@@ -190,7 +190,8 @@ mypy src/                              # Type checking
 python -m pytest -v                       # All tests
 python -m pytest -v -s                    # With stdout
 python -m pytest -v -m "not integration"  # Skip integration
-python -m pytest -v -m "integration"      # Only integration
+python -m pytest -v -m "integration"      # Only integration API tests
+python -m pytest -v -m "telegram"         # Only telegram API tests
 python -m pytest -k "test_name" -v        # Specific test
 python -m pytest tests/test_module.py::test_function -v  # Specific test
 
