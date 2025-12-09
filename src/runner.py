@@ -4,14 +4,18 @@ Executes one complete tick of simulation: loads state, runs all phases
 sequentially, saves results atomically.
 
 Example:
+    >>> from pathlib import Path
     >>> from src.config import Config
     >>> from src.narrators import ConsoleNarrator
     >>> from src.runner import TickRunner
+    >>> from src.utils.storage import load_simulation
     >>> config = Config.load()
+    >>> sim_path = config.project_root / "simulations" / "my-sim"
+    >>> simulation = load_simulation(sim_path)
     >>> narrators = [ConsoleNarrator()]
     >>> runner = TickRunner(config, narrators)
-    >>> report = await runner.run_tick("my-sim")
-    >>> print(f"Completed tick {report.tick_number}")
+    >>> report = await runner.run_tick(simulation, sim_path)
+    >>> report.tick_number  # 1
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from src.config import Config, PhaseConfig
@@ -33,7 +38,7 @@ from src.phases import (
 )
 from src.utils.llm import BatchStats, LLMClient
 from src.utils.llm_adapters import OpenAIAdapter
-from src.utils.storage import Simulation, load_simulation, save_simulation
+from src.utils.storage import Simulation, save_simulation
 
 if TYPE_CHECKING:
     from src.narrators import Narrator
@@ -138,7 +143,7 @@ class TickRunner:
 
     Example:
         >>> runner = TickRunner(config, [ConsoleNarrator()])
-        >>> result = await runner.run_tick("my-sim")
+        >>> result = await runner.run_tick(simulation, sim_path)
     """
 
     def __init__(self, config: Config, narrators: Sequence[Narrator]) -> None:
@@ -151,44 +156,40 @@ class TickRunner:
         self._config = config
         self._narrators = narrators
 
-    async def run_tick(self, sim_id: str) -> TickReport:
+    async def run_tick(self, simulation: Simulation, sim_path: Path) -> TickReport:
         """Execute one complete tick of simulation.
 
         Flow:
-        1. Resolve path and load simulation
-        2. Check status is "paused"
-        3. Set status to "running" (in memory)
-        4. Create entity dicts for LLM clients
-        5. Initialize tick statistics
-        6. Execute all phases sequentially
-        7. Sync _openai data back to simulation models
-        8. Aggregate usage into simulation._openai
-        9. Increment current_tick
-        10. Set status to "paused"
-        11. Save simulation to disk
-        12. Log tick completion with statistics
-        13. Build TickReport
-        14. Write tick log if enabled
-        15. Call all narrators
-        16. Return TickReport
+        1. Check status is "paused"
+        2. Set status to "running" (in memory)
+        3. Create entity dicts for LLM clients
+        4. Initialize tick statistics
+        5. Execute all phases sequentially
+        6. Sync _openai data back to simulation models
+        7. Aggregate usage into simulation._openai
+        8. Increment current_tick
+        9. Set status to "paused"
+        10. Save simulation to disk
+        11. Log tick completion with statistics
+        12. Build TickReport
+        13. Write tick log if enabled
+        14. Call all narrators
+        15. Return TickReport
 
         Args:
-            sim_id: Simulation identifier.
+            simulation: Loaded simulation instance.
+            sim_path: Path to simulation folder.
 
         Returns:
             TickReport with tick data, narratives, and phase information.
 
         Raises:
-            SimulationNotFoundError: Simulation doesn't exist.
             SimulationBusyError: Simulation status is "running".
             PhaseError: Any phase failed.
             StorageIOError: Failed to save results.
         """
         start_time = time.time()
-
-        # Step 1: Resolve path and load simulation
-        sim_path = self._config.project_root / "simulations" / sim_id
-        simulation = load_simulation(sim_path)
+        sim_id = simulation.id
 
         logger.info(
             "Starting tick %d for %s (%d chars, %d locs)",

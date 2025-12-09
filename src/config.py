@@ -15,7 +15,10 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from src.utils.storage import Simulation
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError
@@ -93,12 +96,11 @@ class ConsoleOutputConfig(BaseModel):
     """Console output configuration.
 
     Example:
-        >>> config = ConsoleOutputConfig(enabled=True, show_narratives=False)
+        >>> config = ConsoleOutputConfig(show_narratives=False)
         >>> config.show_narratives
         False
     """
 
-    enabled: bool = True
     show_narratives: bool = True
 
 
@@ -115,16 +117,21 @@ class FileOutputConfig(BaseModel):
 
 
 class TelegramOutputConfig(BaseModel):
-    """Telegram output configuration (future).
+    """Telegram output configuration.
 
     Example:
-        >>> config = TelegramOutputConfig(enabled=True, chat_id="123456")
+        >>> config = TelegramOutputConfig(enabled=True, chat_id="123456", mode="full")
         >>> config.chat_id
         '123456'
+        >>> config.mode
+        'full'
     """
 
     enabled: bool = False
     chat_id: str = ""
+    mode: Literal["none", "narratives", "narratives_stats", "full", "full_stats"] = "none"
+    group_intentions: bool = True
+    group_narratives: bool = True
 
 
 class OutputConfig(BaseModel):
@@ -396,3 +403,42 @@ class Config:
             return default_path
 
         raise PromptNotFoundError(f"Default prompt not found: {default_path}")
+
+    def resolve_output(self, simulation: Simulation | None = None) -> OutputConfig:
+        """Merge config.toml defaults with simulation.json overrides.
+
+        Args:
+            simulation: Loaded simulation with potential output overrides in __pydantic_extra__.
+                       If None, returns defaults from config.toml.
+
+        Returns:
+            OutputConfig with merged values.
+
+        Example:
+            >>> config = Config.load()
+            >>> simulation = load_simulation(sim_path)
+            >>> output_config = config.resolve_output(simulation)
+            >>> print(output_config.telegram.enabled)
+        """
+        # Start with defaults as dicts
+        console_data = self.output.console.model_dump()
+        file_data = self.output.file.model_dump()
+        telegram_data = self.output.telegram.model_dump()
+
+        # Merge overrides from simulation if present
+        if simulation is not None:
+            extra = simulation.__pydantic_extra__ or {}
+            override = extra.get("output", {})
+
+            if "console" in override:
+                console_data.update(override["console"])
+            if "file" in override:
+                file_data.update(override["file"])
+            if "telegram" in override:
+                telegram_data.update(override["telegram"])
+
+        return OutputConfig(
+            console=ConsoleOutputConfig.model_validate(console_data),
+            file=FileOutputConfig.model_validate(file_data),
+            telegram=TelegramOutputConfig.model_validate(telegram_data),
+        )

@@ -695,16 +695,17 @@ class TestOutputConfig:
     def test_output_config_defaults(self) -> None:
         """OutputConfig has sensible defaults."""
         config = OutputConfig()
-        assert config.console.enabled is True
         assert config.console.show_narratives is True
         assert config.file.enabled is True
         assert config.telegram.enabled is False
         assert config.telegram.chat_id == ""
+        assert config.telegram.mode == "none"
+        assert config.telegram.group_intentions is True
+        assert config.telegram.group_narratives is True
 
     def test_console_output_config_custom(self) -> None:
         """ConsoleOutputConfig accepts custom values."""
-        config = ConsoleOutputConfig(enabled=False, show_narratives=False)
-        assert config.enabled is False
+        config = ConsoleOutputConfig(show_narratives=False)
         assert config.show_narratives is False
 
     def test_file_output_config_custom(self) -> None:
@@ -714,9 +715,29 @@ class TestOutputConfig:
 
     def test_telegram_output_config_custom(self) -> None:
         """TelegramOutputConfig accepts custom values."""
-        config = TelegramOutputConfig(enabled=True, chat_id="123456789")
+        config = TelegramOutputConfig(
+            enabled=True,
+            chat_id="123456789",
+            mode="full_stats",
+            group_intentions=False,
+            group_narratives=False,
+        )
         assert config.enabled is True
         assert config.chat_id == "123456789"
+        assert config.mode == "full_stats"
+        assert config.group_intentions is False
+        assert config.group_narratives is False
+
+    def test_telegram_mode_validation(self) -> None:
+        """Invalid mode raises ValidationError."""
+        with pytest.raises(ValidationError):
+            TelegramOutputConfig(mode="invalid")  # type: ignore[arg-type]
+
+    def test_telegram_mode_all_valid_values(self) -> None:
+        """All valid mode values are accepted."""
+        for mode in ["none", "narratives", "narratives_stats", "full", "full_stats"]:
+            config = TelegramOutputConfig(mode=mode)  # type: ignore[arg-type]
+            assert config.mode == mode
 
     def test_output_config_from_toml(self, tmp_path: Path) -> None:
         """Output config is loaded correctly from config.toml."""
@@ -725,7 +746,6 @@ class TestOutputConfig:
             make_minimal_config_toml()
             + """
 [output.console]
-enabled = false
 show_narratives = false
 
 [output.file]
@@ -734,6 +754,9 @@ enabled = true
 [output.telegram]
 enabled = true
 chat_id = "test-chat-кириллица-123"
+mode = "full_stats"
+group_intentions = false
+group_narratives = true
 """,
             encoding="utf-8",
         )
@@ -742,11 +765,13 @@ chat_id = "test-chat-кириллица-123"
 
         config = Config.load(config_path=config_toml, project_root=tmp_path)
 
-        assert config.output.console.enabled is False
         assert config.output.console.show_narratives is False
         assert config.output.file.enabled is True
         assert config.output.telegram.enabled is True
         assert config.output.telegram.chat_id == "test-chat-кириллица-123"
+        assert config.output.telegram.mode == "full_stats"
+        assert config.output.telegram.group_intentions is False
+        assert config.output.telegram.group_narratives is True
 
     def test_output_config_missing_uses_defaults(self, tmp_path: Path) -> None:
         """Missing output section uses defaults."""
@@ -760,11 +785,11 @@ chat_id = "test-chat-кириллица-123"
 
         config = Config.load(config_path=config_toml, project_root=tmp_path)
 
-        assert config.output.console.enabled is True
         assert config.output.console.show_narratives is True
         assert config.output.file.enabled is True
         assert config.output.telegram.enabled is False
         assert config.output.telegram.chat_id == ""
+        assert config.output.telegram.mode == "none"
 
     def test_output_config_partial_section(self, tmp_path: Path) -> None:
         """Partial output section fills missing with defaults."""
@@ -784,8 +809,161 @@ chat_id = "42"
         config = Config.load(config_path=config_toml, project_root=tmp_path)
 
         # console and file should have defaults
-        assert config.output.console.enabled is True
+        assert config.output.console.show_narratives is True
         assert config.output.file.enabled is True
         # telegram should have custom values
         assert config.output.telegram.enabled is True
         assert config.output.telegram.chat_id == "42"
+        # telegram mode should have default
+        assert config.output.telegram.mode == "none"
+
+
+class TestResolveOutput:
+    """Tests for Config.resolve_output() method."""
+
+    def test_resolve_output_no_simulation_returns_defaults(self, tmp_path: Path) -> None:
+        """resolve_output(None) returns config.toml defaults."""
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+        result = config.resolve_output(None)
+
+        assert result.console.show_narratives is True
+        assert result.telegram.mode == "none"
+        assert result.telegram.enabled is False
+
+    def test_resolve_output_simulation_without_output_returns_defaults(
+        self, tmp_path: Path
+    ) -> None:
+        """Simulation without output section returns defaults."""
+        from datetime import datetime
+
+        from src.utils.storage import Simulation
+
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        simulation = Simulation(
+            id="test",
+            current_tick=0,
+            created_at=datetime.now(),
+            status="paused",
+        )
+
+        result = config.resolve_output(simulation)
+        assert result.telegram.enabled is False
+        assert result.telegram.mode == "none"
+        assert result.console.show_narratives is True
+
+    def test_resolve_output_partial_override(self, tmp_path: Path) -> None:
+        """Partial override merges with defaults."""
+        from datetime import datetime
+
+        from src.utils.storage import Simulation
+
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        simulation = Simulation(
+            id="test",
+            current_tick=0,
+            created_at=datetime.now(),
+            status="paused",
+        )
+        # Simulate __pydantic_extra__ with partial override
+        object.__setattr__(
+            simulation,
+            "__pydantic_extra__",
+            {"output": {"telegram": {"enabled": True, "chat_id": "123"}}},
+        )
+
+        result = config.resolve_output(simulation)
+        assert result.telegram.enabled is True
+        assert result.telegram.chat_id == "123"
+        assert result.telegram.mode == "none"  # default preserved
+        assert result.telegram.group_intentions is True  # default preserved
+
+    def test_resolve_output_full_override(self, tmp_path: Path) -> None:
+        """Full override replaces all values."""
+        from datetime import datetime
+
+        from src.utils.storage import Simulation
+
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        simulation = Simulation(
+            id="test",
+            current_tick=0,
+            created_at=datetime.now(),
+            status="paused",
+        )
+        object.__setattr__(
+            simulation,
+            "__pydantic_extra__",
+            {
+                "output": {
+                    "console": {"show_narratives": False},
+                    "file": {"enabled": False},
+                    "telegram": {
+                        "enabled": True,
+                        "chat_id": "999",
+                        "mode": "full_stats",
+                        "group_intentions": False,
+                        "group_narratives": False,
+                    },
+                }
+            },
+        )
+
+        result = config.resolve_output(simulation)
+        assert result.console.show_narratives is False
+        assert result.file.enabled is False
+        assert result.telegram.enabled is True
+        assert result.telegram.chat_id == "999"
+        assert result.telegram.mode == "full_stats"
+        assert result.telegram.group_intentions is False
+        assert result.telegram.group_narratives is False
+
+    def test_resolve_output_invalid_telegram_mode_raises(self, tmp_path: Path) -> None:
+        """Invalid mode in override raises ValidationError."""
+        from datetime import datetime
+
+        from src.utils.storage import Simulation
+
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        simulation = Simulation(
+            id="test",
+            current_tick=0,
+            created_at=datetime.now(),
+            status="paused",
+        )
+        object.__setattr__(
+            simulation,
+            "__pydantic_extra__",
+            {"output": {"telegram": {"mode": "invalid"}}},
+        )
+
+        with pytest.raises(ValidationError):
+            config.resolve_output(simulation)

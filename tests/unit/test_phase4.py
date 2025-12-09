@@ -26,7 +26,6 @@ from src.utils.storage import (
     Simulation,
 )
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -74,7 +73,9 @@ def make_memory_cells(count: int, start_tick: int = 0) -> list[MemoryCell]:
     Cells are ordered newest first: [tick=count-1, tick=count-2, ..., tick=0]
     """
     return [
-        MemoryCell(tick=start_tick + count - 1 - i, text=f"Memory from tick {start_tick + count - 1 - i}")
+        MemoryCell(
+            tick=start_tick + count - 1 - i, text=f"Memory from tick {start_tick + count - 1 - i}"
+        )
         for i in range(count)
     ]
 
@@ -188,14 +189,10 @@ class TestExecuteBatch:
     ) -> None:
         """All characters need summarization - batch is called."""
         alice = make_character(
-            "alice", "Alice", "tavern",
-            cells=make_memory_cells(5),
-            summary="Old summary"
+            "alice", "Alice", "tavern", cells=make_memory_cells(5), summary="Old summary"
         )
         bob = make_character(
-            "bob", "Bob", "forest",
-            cells=make_memory_cells(5),
-            summary="Old Bob summary"
+            "bob", "Bob", "forest", cells=make_memory_cells(5), summary="Old Bob summary"
         )
         tavern = make_location("tavern", "Tavern")
         forest = make_location("forest", "Forest")
@@ -266,14 +263,10 @@ class TestExecuteBatch:
         assert bob.memory.cells[0].text == "Bob's memory"
 
     @pytest.mark.asyncio
-    async def test_execute_mixed(
-        self, config: Config, mock_llm_client: MagicMock
-    ) -> None:
+    async def test_execute_mixed(self, config: Config, mock_llm_client: MagicMock) -> None:
         """Mixed: one needs summary, one has space."""
         alice = make_character(
-            "alice", "Alice", "tavern",
-            cells=make_memory_cells(5),
-            summary="Old summary"
+            "alice", "Alice", "tavern", cells=make_memory_cells(5), summary="Old summary"
         )
         bob = make_character("bob", "Bob", "tavern", cells=make_memory_cells(2))
         tavern = make_location("tavern", "Tavern")
@@ -326,7 +319,9 @@ class TestExecuteFallback:
         original_cells = make_memory_cells(5)
         original_summary = "Original summary that should be preserved"
         alice = make_character(
-            "alice", "Alice", "tavern",
+            "alice",
+            "Alice",
+            "tavern",
             cells=original_cells.copy(),  # Copy to preserve original
             summary=original_summary,
         )
@@ -371,7 +366,9 @@ class TestExecuteFallback:
             MemoryCell(tick=0, text="Memory tick 0"),
         ]
         alice = make_character(
-            "alice", "Alice", "tavern",
+            "alice",
+            "Alice",
+            "tavern",
             cells=cells,
             summary="Important preserved summary",
         )
@@ -393,6 +390,7 @@ class TestExecuteFallback:
             mock_renderer_class.return_value = mock_renderer
 
             import logging
+
             with caplog.at_level(logging.WARNING):
                 await execute(sim, config, mock_llm_client, pending)
 
@@ -462,11 +460,13 @@ class TestAddMemoryCell:
     def test_add_cell_preserves_order(self) -> None:
         """Existing cells shift right when new cell added."""
         char = make_character(
-            "alice", "Alice", "tavern",
+            "alice",
+            "Alice",
+            "tavern",
             cells=[
                 MemoryCell(tick=2, text="Second"),
                 MemoryCell(tick=1, text="First"),
-            ]
+            ],
         )
         _add_memory_cell(char, 3, "Third")
 

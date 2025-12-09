@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 import typer
 
-from src.config import Config, ConfigError
+from src.config import Config, ConfigError, OutputConfig
 from src.narrators import ConsoleNarrator
 from src.runner import PhaseError, SimulationBusyError, TickRunner
 from src.utils.exit_codes import (
@@ -29,6 +30,7 @@ from src.utils.exit_codes import (
 from src.utils.logging_config import setup_logging
 from src.utils.storage import (
     InvalidDataError,
+    Simulation,
     SimulationNotFoundError,
     StorageIOError,
     TemplateNotFoundError,
@@ -67,16 +69,25 @@ def run(sim_id: str) -> None:
         typer.echo(f"Configuration error: {e}", err=True)
         raise typer.Exit(code=EXIT_CONFIG_ERROR)
 
+    sim_path = config.project_root / "simulations" / sim_id
+
+    # Load simulation BEFORE creating narrators
     try:
-        asyncio.run(_run_tick(config, sim_id))
+        simulation = load_simulation(sim_path)
     except SimulationNotFoundError:
         typer.echo(f"Simulation '{sim_id}' not found", err=True)
         raise typer.Exit(code=EXIT_INPUT_ERROR)
     except InvalidDataError as e:
         typer.echo(f"Invalid simulation data: {e}", err=True)
         raise typer.Exit(code=EXIT_INPUT_ERROR)
+
+    # Resolve output config with simulation overrides
+    output_config = config.resolve_output(simulation)
+
+    try:
+        asyncio.run(_run_tick(config, simulation, sim_path, output_config))
     except SimulationBusyError:
-        typer.echo(f"Simulation '{sim_id}' is busy (status: running)", err=True)
+        typer.echo(f"Simulation '{sim_id}' is busy", err=True)
         raise typer.Exit(code=EXIT_RUNTIME_ERROR)
     except PhaseError as e:
         typer.echo(f"Phase failed: {e}", err=True)
@@ -86,19 +97,24 @@ def run(sim_id: str) -> None:
         raise typer.Exit(code=EXIT_IO_ERROR)
 
 
-async def _run_tick(config: Config, sim_id: str) -> None:
+async def _run_tick(
+    config: Config,
+    simulation: Simulation,
+    sim_path: Path,
+    output_config: OutputConfig,
+) -> None:
     """Execute tick asynchronously.
 
     Args:
         config: Application configuration.
-        sim_id: Simulation identifier.
+        simulation: Loaded simulation instance.
+        sim_path: Path to simulation folder.
+        output_config: Resolved output configuration.
     """
-    narrators = [ConsoleNarrator()]
+    narrators = [ConsoleNarrator(show_narratives=output_config.console.show_narratives)]
     runner = TickRunner(config, narrators)
 
-    result = await runner.run_tick(sim_id)
-
-    typer.echo(f"[{sim_id}] Tick {result.tick_number} completed.")
+    await runner.run_tick(simulation, sim_path)
 
 
 @app.command()
@@ -121,7 +137,7 @@ def status(sim_id: str) -> None:
     try:
         simulation = load_simulation(sim_path)
     except SimulationNotFoundError:
-        typer.echo(f"Error: Simulation '{sim_id}' not found", err=True)
+        typer.echo(f"Simulation '{sim_id}' not found", err=True)
         raise typer.Exit(code=EXIT_INPUT_ERROR)
     except InvalidDataError as e:
         typer.echo(f"Invalid simulation data: {e}", err=True)
@@ -159,7 +175,7 @@ def reset(sim_id: str) -> None:
         reset_simulation(sim_id, config.project_root)
         typer.echo(f"[{sim_id}] Reset to template.")
     except TemplateNotFoundError:
-        typer.echo(f"Error: Template for '{sim_id}' not found", err=True)
+        typer.echo(f"Template for '{sim_id}' not found", err=True)
         raise typer.Exit(code=EXIT_INPUT_ERROR)
     except StorageIOError as e:
         typer.echo(f"Storage error: {e}", err=True)

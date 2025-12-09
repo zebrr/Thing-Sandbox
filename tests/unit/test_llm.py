@@ -1142,9 +1142,7 @@ class TestBatchStatsResults:
     """Tests for BatchStats.results population."""
 
     @pytest.mark.asyncio
-    async def test_batch_stats_results_populated_on_success(
-        self, mock_adapter: MagicMock
-    ) -> None:
+    async def test_batch_stats_results_populated_on_success(self, mock_adapter: MagicMock) -> None:
         """BatchStats.results populated with RequestResult on success."""
         mock_adapter.execute.return_value = make_adapter_response(
             response_id="resp_1", answer="test"
@@ -1171,9 +1169,7 @@ class TestBatchStatsResults:
         assert result.error is None
 
     @pytest.mark.asyncio
-    async def test_batch_stats_results_populated_on_failure(
-        self, mock_adapter: MagicMock
-    ) -> None:
+    async def test_batch_stats_results_populated_on_failure(self, mock_adapter: MagicMock) -> None:
         """BatchStats.results populated with RequestResult on failure."""
         mock_adapter.execute.side_effect = LLMTimeoutError("Request timed out")
         client = LLMClient(mock_adapter, [], default_depth=0)
@@ -1222,9 +1218,7 @@ class TestBatchStatsResults:
         assert result.reasoning_summary == ["Thinking..."]
 
     @pytest.mark.asyncio
-    async def test_batch_stats_results_mixed_success_failure(
-        self, mock_adapter: MagicMock
-    ) -> None:
+    async def test_batch_stats_results_mixed_success_failure(self, mock_adapter: MagicMock) -> None:
         """BatchStats.results contains both success and failure results."""
         mock_adapter.execute.side_effect = [
             make_adapter_response(answer="ok"),
@@ -1267,9 +1261,7 @@ class TestBatchStatsResults:
         assert stats.results[2].entity_key == "intention:c"
 
     @pytest.mark.asyncio
-    async def test_create_response_populates_results(
-        self, mock_adapter: MagicMock
-    ) -> None:
+    async def test_create_response_populates_results(self, mock_adapter: MagicMock) -> None:
         """create_response() also populates BatchStats.results."""
         mock_adapter.execute.return_value = make_complex_response()
         client = LLMClient(mock_adapter, [], default_depth=0)
@@ -1290,9 +1282,7 @@ class TestBatchStatsResults:
         assert result.reasoning_summary == ["Thinking..."]
 
     @pytest.mark.asyncio
-    async def test_batch_stats_results_reset_between_calls(
-        self, mock_adapter: MagicMock
-    ) -> None:
+    async def test_batch_stats_results_reset_between_calls(self, mock_adapter: MagicMock) -> None:
         """BatchStats.results reset between create_batch() calls."""
         mock_adapter.execute.side_effect = [
             make_adapter_response(answer="first"),

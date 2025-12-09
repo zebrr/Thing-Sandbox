@@ -40,6 +40,39 @@ Resolves prompt file path with simulation override support.
 - **Warnings**: logs warning if sim_path provided but override not found
 - **Integration**: used by `PromptRenderer` (see `docs/specs/util_prompts.md`)
 
+#### Config.resolve_output(simulation: Simulation | None = None) -> OutputConfig
+
+Resolves output configuration with simulation-specific overrides.
+
+- **Input**:
+  - simulation — Simulation instance (optional)
+- **Returns**: OutputConfig with merged settings
+- **Behavior**:
+  - Starts with values from config.toml
+  - If simulation provided and has `output` section in `__pydantic_extra__`, merges those values
+  - Merging is done per-channel (console, file, telegram)
+  - Simulation values override config.toml values for specific fields
+- **Example**:
+  ```python
+  config = Config.load()
+  sim = load_simulation(sim_path)
+  output_config = config.resolve_output(sim)
+  # output_config.telegram.chat_id may be from simulation.json
+  ```
+- **Simulation JSON override format**:
+  ```json
+  {
+    "id": "my-sim",
+    "output": {
+      "telegram": {
+        "enabled": true,
+        "chat_id": "12345",
+        "mode": "narratives"
+      }
+    }
+  }
+  ```
+
 ### Config Attributes
 
 #### Config.simulation: SimulationConfig
@@ -164,13 +197,11 @@ Console output settings.
 
 ```python
 class ConsoleOutputConfig(BaseModel):
-    enabled: bool = True
     show_narratives: bool = True
 ```
 
 **Field semantics:**
-- `enabled` — whether to output to console
-- `show_narratives` — whether to show narrative text
+- `show_narratives` — whether to show narrative text (default: True)
 
 ### FileOutputConfig
 
@@ -186,17 +217,28 @@ class FileOutputConfig(BaseModel):
 
 ### TelegramOutputConfig
 
-Telegram output settings (for future use).
+Telegram output settings. These are defaults that can be overridden per-simulation in `simulation.json`.
 
 ```python
 class TelegramOutputConfig(BaseModel):
     enabled: bool = False
     chat_id: str = ""
+    mode: Literal["none", "narratives", "narratives_stats", "full", "full_stats"] = "none"
+    group_intentions: bool = True
+    group_narratives: bool = True
 ```
 
 **Field semantics:**
-- `enabled` — whether to send to Telegram
-- `chat_id` — Telegram chat ID for notifications
+- `enabled` — whether to send to Telegram (default: False)
+- `chat_id` — Telegram chat ID for notifications (default: "")
+- `mode` — output mode determining what to send (default: "none")
+  - "none" — no output
+  - "narratives" — only narratives
+  - "narratives_stats" — narratives with statistics
+  - "full" — full output
+  - "full_stats" — full output with statistics
+- `group_intentions` — whether to group intentions in output (default: True)
+- `group_narratives` — whether to group narratives in output (default: True)
 
 ---
 
@@ -263,7 +305,6 @@ truncation = "auto"
 response_chain_depth = 0
 
 [output.console]
-enabled = true
 show_narratives = true
 
 [output.file]
@@ -272,6 +313,9 @@ enabled = true
 [output.telegram]
 enabled = false
 chat_id = ""
+mode = "none"
+group_intentions = true
+group_narratives = true
 ```
 
 ### .env
@@ -365,19 +409,19 @@ default_prompt = config.resolve_prompt("phase2_master")
 ```python
 from src.config import Config, ConfigError, PromptNotFoundError
 from src.utils.exit_codes import EXIT_CONFIG_ERROR, EXIT_INPUT_ERROR
-import sys
+import typer
 
 try:
     config = Config.load()
 except ConfigError as e:
-    print(f"Configuration error: {e}", file=sys.stderr)
-    sys.exit(EXIT_CONFIG_ERROR)
+    typer.echo(f"Configuration error: {e}", err=True)
+    raise typer.Exit(code=EXIT_CONFIG_ERROR)
 
 try:
     prompt = config.resolve_prompt("unknown_prompt")
 except PromptNotFoundError as e:
-    print(f"Prompt not found: {e}", file=sys.stderr)
-    sys.exit(EXIT_INPUT_ERROR)
+    typer.echo(f"Prompt not found: {e}", err=True)
+    raise typer.Exit(code=EXIT_INPUT_ERROR)
 ```
 
 ---

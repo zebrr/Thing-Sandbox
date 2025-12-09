@@ -69,21 +69,22 @@ Note: Uses `load_simulation()` and `save_simulation()` functions directly from `
 - `_phase_data: dict[str, PhaseData]` — per-phase execution data for TickLogger
 - `_pending_memories: dict[str, str]` — pending memory texts from phase 3 for TickLogger
 
-#### TickRunner.run_tick(sim_id: str) -> TickReport
+#### TickRunner.run_tick(simulation: Simulation, sim_path: Path) -> TickReport
 
 Execute one complete tick of simulation.
 
 - **Input**:
-  - sim_id — simulation identifier
+  - simulation — loaded Simulation instance
+  - sim_path — path to simulation folder (for saving state)
 - **Returns**: TickReport with tick data, narratives, and phase information
 - **Raises**:
-  - SimulationNotFoundError (EXIT_INPUT_ERROR) — simulation doesn't exist
   - SimulationBusyError (EXIT_RUNTIME_ERROR) — simulation status is "running"
   - PhaseError (EXIT_RUNTIME_ERROR) — any phase failed
   - StorageError (EXIT_IO_ERROR) — failed to save results
 - **Side effects**:
   - Updates simulation state on disk (atomic)
   - Calls all narrators with TickReport
+- **Note**: CLI is responsible for loading simulation and handling SimulationNotFoundError
 
 ---
 
@@ -92,7 +93,7 @@ Execute one complete tick of simulation.
 ### Sequence
 
 ```
-1. Load simulation via load_simulation()
+1. Receive simulation (already loaded by CLI)
 2. Validate status == "paused"
 3. Set status = "running" (in memory only)
 4. Create entity dicts for LLM clients (_create_entity_dicts)
@@ -263,31 +264,39 @@ Runner does NOT catch phase exceptions. Exceptions propagate to CLI which:
 ### Basic Usage
 
 ```python
+from pathlib import Path
 from src.config import Config
 from src.narrators import ConsoleNarrator
 from src.runner import TickRunner
+from src.utils.storage import load_simulation
 
 config = Config.load()
 narrators = [ConsoleNarrator()]
 
-runner = TickRunner(config, narrators)
-report = await runner.run_tick("my-sim")
+sim_path = config.project_root / "simulations" / "my-sim"
+simulation = load_simulation(sim_path)
 
-print(f"Completed tick {report.tick_number}")
+runner = TickRunner(config, narrators)
+await runner.run_tick(simulation, sim_path)
 ```
 
 ### Error Handling
 
 ```python
-from src.runner import TickRunner, SimulationNotFoundError, PhaseError
+from src.runner import TickRunner, PhaseError
+from src.utils.storage import load_simulation, SimulationNotFoundError
 from src.utils.exit_codes import EXIT_INPUT_ERROR, EXIT_RUNTIME_ERROR
 
+# Loading is now done in CLI, which handles SimulationNotFoundError
 try:
-    report = await runner.run_tick("my-sim")
+    simulation = load_simulation(sim_path)
 except SimulationNotFoundError:
     sys.exit(EXIT_INPUT_ERROR)
+
+try:
+    await runner.run_tick(simulation, sim_path)
 except PhaseError as e:
-    print(f"Phase failed: {e}", file=sys.stderr)
+    logger.error("Phase failed: %s", e)
     sys.exit(EXIT_RUNTIME_ERROR)
 ```
 
@@ -298,7 +307,6 @@ except PhaseError as e:
 ### Unit Tests
 
 - test_run_tick_success — full tick completes, state saved
-- test_run_tick_simulation_not_found — raises SimulationNotFoundError
 - test_run_tick_simulation_busy — status "running" raises SimulationBusyError
 - test_run_tick_phase1_fails — no state saved, exception propagates
 - test_run_tick_phase2a_fails — no state saved after phase1 completed

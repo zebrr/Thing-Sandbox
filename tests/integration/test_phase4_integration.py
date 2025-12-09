@@ -11,7 +11,7 @@ from datetime import datetime
 import pytest
 
 from src.config import Config
-from src.phases.phase4 import SummaryResponse, execute
+from src.phases.phase4 import execute
 from src.utils.llm import LLMClient
 from src.utils.llm_adapters import OpenAIAdapter
 from src.utils.storage import (
@@ -91,8 +91,7 @@ def make_character_with_space(
 ) -> Character:
     """Create character with space in memory queue (no summarization needed)."""
     cells = [
-        MemoryCell(tick=i, text=f"Memory from tick {i}")
-        for i in range(current_cells - 1, -1, -1)
+        MemoryCell(tick=i, text=f"Memory from tick {i}") for i in range(current_cells - 1, -1, -1)
     ]
 
     return Character(
@@ -153,8 +152,11 @@ class TestPhase4RealLLM:
 
         # Create character with full memory
         alice = make_character_with_full_memory(
-            "alice", "Алиса", "tavern", max_cells,
-            description="Молодая исследовательница, любопытная и смелая"
+            "alice",
+            "Алиса",
+            "tavern",
+            max_cells,
+            description="Молодая исследовательница, любопытная и смелая",
         )
         original_summary = alice.memory.summary
         original_oldest_cell = alice.memory.cells[-1].text
@@ -221,8 +223,7 @@ class TestPhase4RealLLM:
         - Memory is added directly
         - Usage stats show no requests for this character
         """
-        max_cells = config.simulation.memory_cells  # K=5
-        current_cells = 2  # Less than K
+        current_cells = 2  # Less than K (max_cells=5 from config)
 
         alice = make_character_with_space("alice", "Alice", "tavern", current_cells)
         tavern = make_location("tavern", "Tavern")
@@ -272,8 +273,7 @@ class TestPhase4RealLLM:
         max_cells = config.simulation.memory_cells
 
         alice = make_character_with_full_memory(
-            "alice", "Alice", "tavern", max_cells,
-            description="Test character for usage tracking"
+            "alice", "Alice", "tavern", max_cells, description="Test character for usage tracking"
         )
         tavern = make_location("tavern", "Tavern")
         sim = make_test_simulation(

@@ -118,19 +118,19 @@ Logs exit code with optional message.
 ### Basic usage in CLI
 ```python
 from src.utils.exit_codes import EXIT_SUCCESS, EXIT_CONFIG_ERROR, EXIT_INPUT_ERROR
-import sys
+import typer
 
 def main():
     if not config.api_key:
-        print("Error: OPENAI_API_KEY not found", file=sys.stderr)
-        sys.exit(EXIT_CONFIG_ERROR)
-    
+        typer.echo("Error: OPENAI_API_KEY not found", err=True)
+        raise typer.Exit(code=EXIT_CONFIG_ERROR)
+
     if not simulation_path.exists():
-        print(f"Error: Simulation not found: {simulation_path}", file=sys.stderr)
-        sys.exit(EXIT_INPUT_ERROR)
-    
+        typer.echo(f"Error: Simulation not found: {simulation_path}", err=True)
+        raise typer.Exit(code=EXIT_INPUT_ERROR)
+
     # ... run simulation ...
-    sys.exit(EXIT_SUCCESS)
+    raise typer.Exit(code=EXIT_SUCCESS)
 ```
 
 ### Usage with logging

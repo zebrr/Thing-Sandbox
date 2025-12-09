@@ -199,15 +199,17 @@ renderer = PromptRenderer(config)  # sim_path=None
 from src.utils.prompts import PromptRenderer, PromptRenderError
 from src.config import PromptNotFoundError
 from src.utils.exit_codes import EXIT_INPUT_ERROR
-import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     result = renderer.render("phase1_intention_user", {"character": char})
 except PromptNotFoundError as e:
-    print(f"Template not found: {e}", file=sys.stderr)
+    logger.error("Template not found: %s", e)
     sys.exit(EXIT_INPUT_ERROR)
 except PromptRenderError as e:
-    print(f"Render error: {e}", file=sys.stderr)
+    logger.error("Render error: %s", e)
     sys.exit(EXIT_INPUT_ERROR)
 ```
 

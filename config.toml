@@ -57,7 +57,6 @@ truncation = "auto"
 response_chain_depth = 0
 
 [output.console]
-enabled = true
 show_narratives = true
 
 [output.file]
@@ -66,3 +65,6 @@ enabled = true
 [output.telegram]
 enabled = false
 chat_id = ""
+mode = "none"
+group_intentions = true
+group_narratives = true

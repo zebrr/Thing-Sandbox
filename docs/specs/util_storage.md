@@ -311,18 +311,20 @@ from src.utils.storage import (
     StorageIOError,
 )
 from src.utils.exit_codes import EXIT_INPUT_ERROR, EXIT_IO_ERROR
-import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     sim = load_simulation(path)
 except SimulationNotFoundError as e:
-    print(f"Simulation not found: {e.path}", file=sys.stderr)
+    logger.error("Simulation not found: %s", e.path)
     sys.exit(EXIT_INPUT_ERROR)
 except InvalidDataError as e:
-    print(f"Invalid data: {e}", file=sys.stderr)
+    logger.error("Invalid data: %s", e)
     sys.exit(EXIT_INPUT_ERROR)
 except StorageIOError as e:
-    print(f"IO error: {e}", file=sys.stderr)
+    logger.error("IO error: %s", e)
     sys.exit(EXIT_IO_ERROR)
 ```
 

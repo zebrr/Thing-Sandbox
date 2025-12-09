@@ -19,7 +19,7 @@ from src.phases.common import PhaseResult
 from src.phases.phase1 import IntentionResponse
 from src.phases.phase2b import NarrativeResponse
 from src.runner import TickRunner
-from src.utils.storage import SimulationNotFoundError, load_simulation
+from src.utils.storage import load_simulation
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -121,12 +121,14 @@ async def test_run_tick_increments_current_tick(temp_demo_sim: Path, temp_config
     async def mock_execute(simulation, config, llm_client):
         return _mock_phase1_result(simulation)
 
+    simulation = load_simulation(temp_demo_sim)
+
     with (
         patch("src.runner.execute_phase1", mock_execute),
         patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
     ):
         runner = TickRunner(temp_config, [])
-        result = await runner.run_tick("demo-sim")
+        result = await runner.run_tick(simulation, temp_demo_sim)
 
     # Verify result
     assert result.success is True
@@ -141,17 +143,17 @@ async def test_run_tick_increments_current_tick(temp_demo_sim: Path, temp_config
 @pytest.mark.asyncio
 async def test_run_tick_returns_narratives(temp_demo_sim: Path, temp_config: Config) -> None:
     """Running a tick returns narratives for all locations."""
-    sim = load_simulation(temp_demo_sim)
-    location_ids = list(sim.locations.keys())
+    simulation = load_simulation(temp_demo_sim)
+    location_ids = list(simulation.locations.keys())
 
-    async def mock_phase1(simulation, config, llm_client):
-        return _mock_phase1_result(simulation)
+    async def mock_phase1(sim, config, llm_client):
+        return _mock_phase1_result(sim)
 
-    async def mock_phase2a(simulation, config, llm_client, intentions):
-        return _mock_phase2a_result(simulation)
+    async def mock_phase2a(sim, config, llm_client, intentions):
+        return _mock_phase2a_result(sim)
 
-    async def mock_phase2b(simulation, config, llm_client, master_results, intentions):
-        return _mock_phase2b_result(simulation)
+    async def mock_phase2b(sim, config, llm_client, master_results, intentions):
+        return _mock_phase2b_result(sim)
 
     with (
         patch("src.runner.execute_phase1", mock_phase1),
@@ -160,7 +162,7 @@ async def test_run_tick_returns_narratives(temp_demo_sim: Path, temp_config: Con
         patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
     ):
         runner = TickRunner(temp_config, [])
-        result = await runner.run_tick("demo-sim")
+        result = await runner.run_tick(simulation, temp_demo_sim)
 
     assert result.success is True
     assert isinstance(result.narratives, dict)
@@ -181,15 +183,6 @@ async def test_run_tick_returns_narratives(temp_demo_sim: Path, temp_config: Con
 
 
 @pytest.mark.asyncio
-async def test_run_tick_simulation_not_found(temp_config: Config) -> None:
-    """Running tick on non-existent simulation raises SimulationNotFoundError."""
-    runner = TickRunner(temp_config, [])
-
-    with pytest.raises(SimulationNotFoundError):
-        await runner.run_tick("nonexistent-sim")
-
-
-@pytest.mark.asyncio
 async def test_run_tick_calls_narrators(temp_demo_sim: Path, temp_config: Config) -> None:
     """Narrators are called after successful tick."""
     captured_results: list = []
@@ -201,12 +194,14 @@ async def test_run_tick_calls_narrators(temp_demo_sim: Path, temp_config: Config
     async def mock_execute(simulation, config, llm_client):
         return _mock_phase1_result(simulation)
 
+    simulation = load_simulation(temp_demo_sim)
+
     with (
         patch("src.runner.execute_phase1", mock_execute),
         patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
     ):
         runner = TickRunner(temp_config, [MockNarrator()])
-        result = await runner.run_tick("demo-sim")
+        result = await runner.run_tick(simulation, temp_demo_sim)
 
     assert len(captured_results) == 1
     assert captured_results[0] is result
@@ -302,7 +297,7 @@ def test_console_narrator_output(capsys: pytest.CaptureFixture) -> None:
 def test_run_command_success(
     temp_demo_sim: Path, temp_config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Run command completes successfully and shows completion message."""
+    """Run command completes successfully."""
     monkeypatch.setattr("src.cli.Config.load", lambda: temp_config)
 
     # Mock Phase 1 to avoid LLM calls
@@ -318,9 +313,6 @@ def test_run_command_success(
 
     # Should exit successfully
     assert result.exit_code == 0
-
-    # Should show completion message
-    assert "[demo-sim] Tick 1 completed." in result.stdout
 
 
 def test_run_command_not_found(temp_config: Config, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -341,14 +333,16 @@ async def test_run_tick_creates_log_file(temp_demo_sim: Path, temp_config: Confi
     # Ensure output.file.enabled is True (default)
     assert temp_config.output.file.enabled is True
 
-    async def mock_phase1(simulation, config, llm_client):
-        return _mock_phase1_result(simulation)
+    simulation = load_simulation(temp_demo_sim)
 
-    async def mock_phase2a(simulation, config, llm_client, intentions):
-        return _mock_phase2a_result(simulation)
+    async def mock_phase1(sim, config, llm_client):
+        return _mock_phase1_result(sim)
 
-    async def mock_phase2b(simulation, config, llm_client, master_results, intentions):
-        return _mock_phase2b_result(simulation)
+    async def mock_phase2a(sim, config, llm_client, intentions):
+        return _mock_phase2a_result(sim)
+
+    async def mock_phase2b(sim, config, llm_client, master_results, intentions):
+        return _mock_phase2b_result(sim)
 
     with (
         patch("src.runner.execute_phase1", mock_phase1),
@@ -357,7 +351,7 @@ async def test_run_tick_creates_log_file(temp_demo_sim: Path, temp_config: Confi
         patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
     ):
         runner = TickRunner(temp_config, [])
-        result = await runner.run_tick("demo-sim")
+        result = await runner.run_tick(simulation, temp_demo_sim)
 
     assert result.success is True
 
@@ -382,14 +376,16 @@ async def test_run_tick_log_file_disabled(temp_demo_sim: Path, temp_config: Conf
     # Disable file output
     temp_config.output.file.enabled = False
 
-    async def mock_phase1(simulation, config, llm_client):
-        return _mock_phase1_result(simulation)
+    simulation = load_simulation(temp_demo_sim)
 
-    async def mock_phase2a(simulation, config, llm_client, intentions):
-        return _mock_phase2a_result(simulation)
+    async def mock_phase1(sim, config, llm_client):
+        return _mock_phase1_result(sim)
 
-    async def mock_phase2b(simulation, config, llm_client, master_results, intentions):
-        return _mock_phase2b_result(simulation)
+    async def mock_phase2a(sim, config, llm_client, intentions):
+        return _mock_phase2a_result(sim)
+
+    async def mock_phase2b(sim, config, llm_client, master_results, intentions):
+        return _mock_phase2b_result(sim)
 
     with (
         patch("src.runner.execute_phase1", mock_phase1),
@@ -398,7 +394,7 @@ async def test_run_tick_log_file_disabled(temp_demo_sim: Path, temp_config: Conf
         patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}),
     ):
         runner = TickRunner(temp_config, [])
-        result = await runner.run_tick("demo-sim")
+        result = await runner.run_tick(simulation, temp_demo_sim)
 
     assert result.success is True
 

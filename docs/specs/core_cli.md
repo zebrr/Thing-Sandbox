@@ -52,9 +52,11 @@ python -m src.cli run <sim-id> [OPTIONS]
 
 **Behavior:**
 1. Load configuration
-2. Resolve run parameters (CLI overrides → config defaults)
-3. Execute tick(s) via TickRunner
-4. Exit with appropriate code
+2. Load simulation via load_simulation()
+3. Resolve output configuration via config.resolve_output(simulation)
+4. Create narrators with resolved output config
+5. Execute tick(s) via TickRunner
+6. Exit with appropriate code
 
 **MVP Implementation:**
 - Ignores config defaults for mode/interval/ticks
@@ -319,14 +321,20 @@ TickRunner is async, but Typer commands are sync. Use:
 
 ```python
 import asyncio
+from src.utils.storage import load_simulation
 
 @app.command()
 def run(sim_id: str) -> None:
-    asyncio.run(_run_async(sim_id))
+    config = Config.load()
+    sim_path = config.project_root / "simulations" / sim_id
+    simulation = load_simulation(sim_path)
+    output_config = config.resolve_output(simulation)
+    asyncio.run(_run_tick(config, simulation, sim_path, output_config))
 
-async def _run_async(sim_id: str) -> None:
-    runner = TickRunner(...)
-    await runner.run_tick(sim_id)
+async def _run_tick(config, simulation, sim_path, output_config) -> None:
+    narrators = [ConsoleNarrator(show_narratives=output_config.console.show_narratives)]
+    runner = TickRunner(config, narrators)
+    await runner.run_tick(simulation, sim_path)
 ```
 
 ### Entry Point

@@ -19,7 +19,7 @@ from src.utils.storage import (
     LocationIdentity,
     LocationState,
     Simulation,
-    SimulationNotFoundError,
+    load_simulation,
 )
 
 
@@ -226,30 +226,24 @@ class TestTickRunner:
         assert runner._narrators is narrators
 
     @pytest.mark.asyncio
-    async def test_run_tick_simulation_not_found(self, mock_config: Config) -> None:
-        """run_tick raises SimulationNotFoundError for missing simulation."""
-        runner = TickRunner(mock_config, [])
-
-        with pytest.raises(SimulationNotFoundError):
-            await runner.run_tick("nonexistent-sim")
-
-    @pytest.mark.asyncio
     async def test_run_tick_simulation_busy(self, mock_config: Config, tmp_path: Path) -> None:
         """run_tick raises SimulationBusyError when status is running."""
         # Create simulation with running status
-        create_test_simulation_on_disk(tmp_path, status="running")
+        sim_path = create_test_simulation_on_disk(tmp_path, status="running")
+        simulation = load_simulation(sim_path)
 
         runner = TickRunner(mock_config, [])
 
         with pytest.raises(SimulationBusyError) as exc_info:
-            await runner.run_tick("test-sim")
+            await runner.run_tick(simulation, sim_path)
 
         assert exc_info.value.sim_id == "test-sim"
 
     @pytest.mark.asyncio
     async def test_run_tick_success(self, mock_config: Config, tmp_path: Path) -> None:
         """run_tick completes successfully and increments tick."""
-        create_test_simulation_on_disk(tmp_path)
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
 
         # Mock all phases to succeed
         async def mock_phase1(sim, cfg, client):
@@ -290,7 +284,7 @@ class TestTickRunner:
             patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
         ):
             runner = TickRunner(mock_config, [])
-            result = await runner.run_tick("test-sim")
+            result = await runner.run_tick(simulation, sim_path)
 
         assert result.success is True
         assert result.tick_number == 1
@@ -301,7 +295,8 @@ class TestTickRunner:
     @pytest.mark.asyncio
     async def test_run_tick_phase1_fails(self, mock_config: Config, tmp_path: Path) -> None:
         """run_tick raises PhaseError when phase1 fails."""
-        create_test_simulation_on_disk(tmp_path)
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
 
         async def mock_phase1_fail(sim, cfg, client):
             return PhaseResult(success=False, data=None, error="LLM error")
@@ -313,7 +308,7 @@ class TestTickRunner:
             runner = TickRunner(mock_config, [])
 
             with pytest.raises(PhaseError) as exc_info:
-                await runner.run_tick("test-sim")
+                await runner.run_tick(simulation, sim_path)
 
             assert exc_info.value.phase_name == "phase1"
             assert "LLM error" in exc_info.value.error
@@ -321,7 +316,8 @@ class TestTickRunner:
     @pytest.mark.asyncio
     async def test_run_tick_phase2a_fails(self, mock_config: Config, tmp_path: Path) -> None:
         """run_tick raises PhaseError when phase2a fails."""
-        create_test_simulation_on_disk(tmp_path)
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
 
         async def mock_phase1(sim, cfg, client):
             return PhaseResult(success=True, data={})
@@ -337,14 +333,15 @@ class TestTickRunner:
             runner = TickRunner(mock_config, [])
 
             with pytest.raises(PhaseError) as exc_info:
-                await runner.run_tick("test-sim")
+                await runner.run_tick(simulation, sim_path)
 
             assert exc_info.value.phase_name == "phase2a"
 
     @pytest.mark.asyncio
     async def test_run_tick_calls_narrators(self, mock_config: Config, tmp_path: Path) -> None:
         """run_tick calls all narrators after success."""
-        create_test_simulation_on_disk(tmp_path)
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
 
         captured_results: list = []
 
@@ -376,7 +373,7 @@ class TestTickRunner:
             patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
         ):
             runner = TickRunner(mock_config, [MockNarrator(), MockNarrator()])
-            await runner.run_tick("test-sim")
+            await runner.run_tick(simulation, sim_path)
 
         # Both narrators should be called
         assert len(captured_results) == 2
@@ -387,7 +384,8 @@ class TestTickRunner:
         self, mock_config: Config, tmp_path: Path
     ) -> None:
         """run_tick continues if narrator fails."""
-        create_test_simulation_on_disk(tmp_path)
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
 
         call_count = 0
 
@@ -425,7 +423,7 @@ class TestTickRunner:
         ):
             # Failing narrator first, counting narrator second
             runner = TickRunner(mock_config, [FailingNarrator(), CountingNarrator()])
-            result = await runner.run_tick("test-sim")
+            result = await runner.run_tick(simulation, sim_path)
 
         # Tick should still succeed
         assert result.success is True
@@ -438,6 +436,7 @@ class TestTickRunner:
     ) -> None:
         """run_tick increments current_tick and saves to disk."""
         sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
 
         async def mock_phase1(sim, cfg, client):
             return PhaseResult(success=True, data={})
@@ -463,7 +462,7 @@ class TestTickRunner:
             patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
         ):
             runner = TickRunner(mock_config, [])
-            result = await runner.run_tick("test-sim")
+            result = await runner.run_tick(simulation, sim_path)
 
         assert result.tick_number == 1
 
@@ -478,6 +477,7 @@ class TestTickRunner:
     ) -> None:
         """run_tick does not save state if phase fails."""
         sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
 
         async def mock_phase1_fail(sim, cfg, client):
             return PhaseResult(success=False, data=None, error="Failed")
@@ -489,7 +489,7 @@ class TestTickRunner:
             runner = TickRunner(mock_config, [])
 
             with pytest.raises(PhaseError):
-                await runner.run_tick("test-sim")
+                await runner.run_tick(simulation, sim_path)
 
         # Verify tick was NOT incremented
         sim_json = json.loads((sim_path / "simulation.json").read_text(encoding="utf-8"))
