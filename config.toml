@@ -57,14 +57,29 @@ truncation = "auto"
 response_chain_depth = 0
 
 [output.console]
+# show_narratives: показывать нарративы в консоли (true/false)
+# Можно переопределить в simulation.json → output.console.show_narratives
 show_narratives = true
 
 [output.file]
+# enabled: писать логи тиков в файлы (true/false)
+# Можно переопределить в simulation.json → output.file.enabled
 enabled = true
 
 [output.telegram]
+# Все параметры можно переопределить в simulation.json → output.telegram.*
+# enabled: включить Telegram нарратор (true/false)
 enabled = false
+# chat_id: ID чата/канала (строка с числом, например "1234567890")
 chat_id = ""
+# mode: режим вывода
+#   "none" — отключено
+#   "narratives" — только нарративы
+#   "narratives_stats" — нарративы + статистика
+#   "full" — намерения + нарративы
+#   "full_stats" — намерения + нарративы + статистика
 mode = "none"
+# group_intentions: группировать намерения в одно сообщение (true/false)
 group_intentions = true
+# group_narratives: группировать нарративы в одно сообщение (true/false)
 group_narratives = true

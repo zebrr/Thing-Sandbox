@@ -176,6 +176,7 @@ Storage saves atomically at tick end
 
 - Python 3.11+
 - OpenAI API key with access to GPT-5 family models
+- Telegram Bot token (optional, for Telegram output)
 
 ### Installation
 
@@ -190,7 +191,7 @@ source .venv/bin/activate      # Linux/macOS
 pip install -r requirements.txt
 
 cp .env.example .env
-# Edit .env with your OPENAI_API_KEY
+# Edit .env with your OPENAI_API_KEY etc
 ```
 
 ### First Run
@@ -245,7 +246,6 @@ model = "gpt-5-mini-2025-08-07"
 # ... similar to phase1
 
 [output.console]
-enabled = true
 show_narratives = true
 
 [output.file]
@@ -254,6 +254,9 @@ enabled = true
 [output.telegram]
 enabled = false
 chat_id = ""
+mode = "none"              # none | narratives | narratives_stats | full | full_stats
+group_intentions = true
+group_narratives = true
 ```
 
 ### Environment Variables
@@ -261,6 +264,8 @@ chat_id = ""
 ```bash
 # .env
 OPENAI_API_KEY=sk-...
+TELEGRAM_BOT_TOKEN=...      # optional, for Telegram output
+TELEGRAM_TEST_CHAT_ID=...   # optional, for integration tests
 ```
 
 ### Custom Prompts
@@ -364,7 +369,7 @@ simulations/my-sim/
 - **Sequential ticks** — no parallel tick execution (by design — causality matters)
 - **API-dependent** — requires stable OpenAI API access
 - **Single provider** — currently OpenAI only (architecture supports multiple)
-- **No UI** — CLI and log files only (Telegram narrator planned)
+- **No UI** — CLI, log files, and optional Telegram output
 
 ## Development
 
@@ -395,12 +400,16 @@ src/
     cli.py              # Entry point
     config.py           # Configuration loading
     runner.py           # Tick orchestration
-    narrators.py        # Output: console, (telegram planned)
+    narrators.py        # Output: console, Telegram
     tick_logger.py      # Detailed markdown logs
     phases/             # Tick phases
     utils/              # Shared components
     prompts/            # Jinja2 templates
     schemas/            # JSON schemas
+simulations/
+    _templates/         # Template simulations for reset
+        demo-sim/       # Demo simulation template
+    demo-sim/           # Working simulation (created by reset)
 tests/
     unit/               # Fast, isolated tests
     integration/        # Real API tests
