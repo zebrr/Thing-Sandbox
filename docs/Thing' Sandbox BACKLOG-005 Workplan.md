@@ -351,7 +351,7 @@ logger = logging.getLogger(__name__)
 
 ## Этап 3: TelegramNarrator (business logic)
 
-Форматирование и отправка tick report в Telegram. Реализует `Narrator` protocol.
+Форматирование и отправка сообщений в Telegram по мере выполнения тика. Реализует `Narrator` protocol с использованием lifecycle методов.
 Добавляется в `src/narrators.py` согласно архитектуре.
 
 **STATUS: не начат**
@@ -371,13 +371,39 @@ logger = logging.getLogger(__name__)
 2. Реализовать `TelegramNarrator` в `src/narrators.py`
 3. Написать тесты
 
+### Архитектура: Lifecycle методы
+
+TelegramNarrator использует lifecycle методы протокола Narrator для отправки сообщений **по мере выполнения тика**, а не в конце:
+
+```
+on_tick_start(sim_id, tick_number, simulation)
+    → Сохраняет simulation в self._simulation для доступа к именам
+    → Сохраняет sim_id, tick_number для заголовков
+
+on_phase_complete("phase1", phase_data)
+    → Отправляет intentions (если mode=full/full_stats)
+    → Данные: phase_data.data = dict[str, IntentionResponse]
+    → Имена персонажей: self._simulation.characters[id].identity.name
+
+on_phase_complete("phase2b", phase_data)
+    → Отправляет narratives
+    → Данные: phase_data.data = dict[str, NarrativeResponse]
+    → Имена локаций: self._simulation.locations[id].identity.name
+
+output(report)
+    → No-op (всё уже отправлено в on_phase_complete)
+```
+
+**Преимущество:** Пользователь видит intentions сразу после Phase 1, не дожидаясь завершения всего тика.
+
 ### Класс TelegramNarrator
 
 ```python
 class TelegramNarrator:
-    """Sends tick report to Telegram channel.
+    """Sends tick updates to Telegram channel via lifecycle methods.
     
-    Implements Narrator protocol. Uses TelegramClient for transport.
+    Implements Narrator protocol. Uses on_phase_complete to send
+    intentions after Phase 1 and narratives after Phase 2b.
     """
     
     def __init__(
@@ -397,28 +423,71 @@ class TelegramNarrator:
             group_intentions: Group all intentions in one message.
             group_narratives: Group all narratives in one message.
         """
+        self._client = client
+        self._chat_id = chat_id
+        self._mode = mode
+        self._group_intentions = group_intentions
+        self._group_narratives = group_narratives
+        
+        # Set by on_tick_start, used in on_phase_complete
+        self._simulation: Simulation | None = None
+        self._sim_id: str = ""
+        self._tick_number: int = 0
+        
+        # Accumulate stats for phase2 (2a + 2b)
+        self._phase2a_stats: BatchStats | None = None
+        self._phase2a_duration: float = 0.0
+    
+    def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
+        """Store simulation reference for name lookups."""
+        self._simulation = simulation
+        self._sim_id = sim_id
+        self._tick_number = tick_number
+        self._phase2a_stats = None
+        self._phase2a_duration = 0.0
+    
+    def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
+        """Send messages after relevant phases."""
+        if phase_name == "phase1" and self._mode in ("full", "full_stats"):
+            self._send_intentions(phase_data)
+        elif phase_name == "phase2a":
+            # Store for combined stats with phase2b
+            self._phase2a_stats = phase_data.stats
+            self._phase2a_duration = phase_data.duration
+        elif phase_name == "phase2b":
+            self._send_narratives(phase_data)
     
     def output(self, report: TickReport) -> None:
-        """Output tick report to Telegram.
-        
-        Implements Narrator protocol. Calls async TelegramClient
-        via asyncio in separate thread (runner calls from async context).
-        
-        Args:
-            report: TickReport from completed tick.
-        """
+        """No-op — all messages sent in on_phase_complete."""
+        pass
 ```
 
-### Async/Sync мост
+### Async в sync контексте
 
-Runner вызывает `output()` из async контекста (`run_tick`). TelegramClient — async.
-Решение: запуск async кода в отдельном потоке через `concurrent.futures.ThreadPoolExecutor`.
+Runner вызывает lifecycle методы синхронно. TelegramClient — async.
+
+**Решение:** Использовать `asyncio.get_event_loop().run_until_complete()` внутри lifecycle методов. Runner уже запущен в async контексте через `asyncio.run()` в CLI, но lifecycle методы вызываются синхронно.
 
 ```python
-def output(self, report: TickReport) -> None:
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(asyncio.run, self._send_async(report))
-        future.result()
+def _send_intentions(self, phase_data: PhaseData) -> None:
+    """Send intentions to Telegram."""
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self._send_intentions_async(phase_data))
+    except Exception as e:
+        logger.warning("Failed to send intentions: %s", e)
+```
+
+**Альтернатива (если run_until_complete не работает):** `asyncio.run()` в отдельном потоке:
+
+```python
+def _send_intentions(self, phase_data: PhaseData) -> None:
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, self._send_intentions_async(phase_data))
+            future.result(timeout=30.0)
+    except Exception as e:
+        logger.warning("Failed to send intentions: %s", e)
 ```
 
 ### Helper функция
@@ -429,20 +498,22 @@ def escape_html(text: str) -> str:
     
     Escapes: < > &
     """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 ```
 
-### Источники данных из TickReport
+### Источники данных
 
-- `report.sim_id` — ID симуляции
-- `report.tick_number` — номер такта
-- `report.phases["phase1"].data` — dict[str, IntentionResponse]
-- `report.phases["phase1"].stats` — BatchStats для intentions
-- `report.phases["phase1"].duration` — время Phase 1
-- `report.narratives` — dict[str, str] (loc_id → narrative text)
-- `report.location_names` — dict[str, str] (loc_id → display name)
-- `report.simulation.characters[char_id].identity.name` — имя персонажа
-- `report.phases["phase2a"].stats` + `report.phases["phase2b"].stats` — stats для narratives
-- `report.phases["phase2a"].duration` + `report.phases["phase2b"].duration` — время Phase 2
+**В on_phase_complete("phase1", phase_data):**
+- `phase_data.data` — `dict[str, IntentionResponse]` (char_id → response)
+- `phase_data.stats` — BatchStats
+- `phase_data.duration` — float (секунды)
+- `self._simulation.characters[char_id].identity.name` — имя персонажа
+
+**В on_phase_complete("phase2b", phase_data):**
+- `phase_data.data` — `dict[str, NarrativeResponse]` (loc_id → response)
+- `phase_data.stats` + `self._phase2a_stats` — суммарная статистика Phase 2
+- `phase_data.duration` + `self._phase2a_duration` — суммарное время Phase 2
+- `self._simulation.locations[loc_id].identity.name` — имя локации
 
 ### Форматы сообщений
 
@@ -533,27 +604,34 @@ logger = logging.getLogger(__name__)
 ```
 
 - **DEBUG**: форматирование сообщений
-- **INFO**: `📨 telegram: Sent 2 intentions, 1 narrative to chat -100123`
+- **INFO**: `📨 telegram: Sent 2 intentions to chat -100123`
+- **INFO**: `📨 telegram: Sent 1 narrative to chat -100123`
 - **WARNING**: ошибка отправки (продолжаем работу)
 
 ### Обработка ошибок
 
 - Ошибки TelegramClient логируются как WARNING
-- `output()` НЕ бросает исключения (как и ConsoleNarrator)
+- Lifecycle методы НЕ бросают исключения (изолированы в runner)
 - При ошибке отправки — продолжаем со следующим сообщением
+- Если `self._simulation` is None в on_phase_complete — логируем WARNING, пропускаем
 
 ### Тесты
 
 **Unit тесты с mocked TelegramClient:**
-- `test_output_intentions_grouped` — один вызов send_message для intentions
-- `test_output_intentions_per_character` — N вызовов send_message
-- `test_output_narratives_grouped` — один вызов send_message для narratives
-- `test_output_narratives_per_location` — M вызовов send_message
+- `test_on_tick_start_stores_simulation` — simulation сохраняется
+- `test_on_phase_complete_phase1_sends_intentions` — intentions отправляются после phase1
+- `test_on_phase_complete_phase1_skipped_for_narratives_mode` — mode=narratives не отправляет intentions
+- `test_on_phase_complete_phase2b_sends_narratives` — narratives отправляются после phase2b
+- `test_intentions_grouped` — один вызов send_message для intentions
+- `test_intentions_per_character` — N вызовов send_message
+- `test_narratives_grouped` — один вызов send_message для narratives
+- `test_narratives_per_location` — M вызовов send_message
 - `test_stats_footer_only_on_last` — footer на последнем сообщении
 - `test_stats_footer_only_for_stats_modes` — нет footer для non-stats режимов
-- `test_mode_narratives_skips_intentions` — mode=narratives не отправляет intentions
+- `test_phase2_stats_combined` — stats суммируются из phase2a и phase2b
 - `test_escape_html` — экранирование < > &
 - `test_error_handling` — ошибка client не бросает exception
+- `test_output_is_noop` — output() ничего не делает
 - `test_narrator_protocol` — TelegramNarrator satisfies Narrator protocol
 
 ### Артефакты

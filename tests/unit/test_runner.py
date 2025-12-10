@@ -349,6 +349,12 @@ class TestTickRunner:
             def output(self, report: TickReport) -> None:
                 captured_results.append(report)
 
+            async def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+                pass
+
+            async def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+                pass
+
         async def mock_phase1(sim, cfg, client):
             return PhaseResult(success=True, data={})
 
@@ -393,10 +399,22 @@ class TestTickRunner:
             def output(self, report: TickReport) -> None:
                 raise RuntimeError("Narrator crashed")
 
+            async def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+                pass
+
+            async def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+                pass
+
         class CountingNarrator:
             def output(self, report: TickReport) -> None:
                 nonlocal call_count
                 call_count += 1
+
+            async def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+                pass
+
+            async def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+                pass
 
         async def mock_phase1(sim, cfg, client):
             return PhaseResult(success=True, data={})
@@ -636,10 +654,10 @@ class TestNarratorLifecycleNotifications:
             def output(self, report: TickReport) -> None:
                 pass
 
-            def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+            async def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
                 captured_tick_starts.append((sim_id, tick_number, sim))
 
-            def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+            async def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
                 pass
 
         async def mock_phase1(sim, cfg, client):
@@ -690,10 +708,10 @@ class TestNarratorLifecycleNotifications:
             def output(self, report: TickReport) -> None:
                 pass
 
-            def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+            async def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
                 pass
 
-            def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+            async def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
                 captured_phase_completes.append(phase_name)
 
         async def mock_phase1(sim, cfg, client):
@@ -738,10 +756,10 @@ class TestNarratorLifecycleNotifications:
             def output(self, report: TickReport) -> None:
                 pass
 
-            def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+            async def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
                 raise RuntimeError("on_tick_start crashed")
 
-            def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+            async def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
                 pass
 
         async def mock_phase1(sim, cfg, client):
@@ -785,10 +803,10 @@ class TestNarratorLifecycleNotifications:
             def output(self, report: TickReport) -> None:
                 pass
 
-            def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+            async def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
                 pass
 
-            def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+            async def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
                 raise RuntimeError("on_phase_complete crashed")
 
         async def mock_phase1(sim, cfg, client):
@@ -818,4 +836,109 @@ class TestNarratorLifecycleNotifications:
             result = await runner.run_tick(simulation, sim_path)
 
         # Tick should still succeed despite narrator failure
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_runner_awaits_pending_tasks_at_end(
+        self, mock_config: Config, tmp_path: Path
+    ) -> None:
+        """Runner awaits all narrator tasks at end of tick."""
+        import asyncio
+
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
+
+        task_completed = False
+
+        class SlowNarrator:
+            def output(self, report: TickReport) -> None:
+                pass
+
+            async def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+                pass
+
+            async def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+                nonlocal task_completed
+                await asyncio.sleep(0.1)  # Simulate slow operation
+                task_completed = True
+
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2a(sim, cfg, client, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2b(sim, cfg, client, master_results, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase3(sim, cfg, master_results):
+            return PhaseResult(success=True, data={"pending_memories": {}})
+
+        async def mock_phase4(sim, cfg, client, memories):
+            return PhaseResult(success=True, data=None)
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a),
+            patch("src.runner.execute_phase2b", mock_phase2b),
+            patch("src.runner.execute_phase3", mock_phase3),
+            patch("src.runner.execute_phase4", mock_phase4),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [SlowNarrator()])
+            result = await runner.run_tick(simulation, sim_path)
+
+        # Task should be completed before run_tick returns
+        assert result.success is True
+        assert task_completed is True
+
+    @pytest.mark.asyncio
+    async def test_runner_narrator_timeout_doesnt_block(
+        self, mock_config: Config, tmp_path: Path
+    ) -> None:
+        """Runner continues after narrator timeout."""
+        import asyncio
+
+        sim_path = create_test_simulation_on_disk(tmp_path)
+        simulation = load_simulation(sim_path)
+
+        class HangingNarrator:
+            def output(self, report: TickReport) -> None:
+                pass
+
+            async def on_tick_start(self, sim_id: str, tick_number: int, sim: object) -> None:
+                pass
+
+            async def on_phase_complete(self, phase_name: str, phase_data: object) -> None:
+                # This would hang forever, but timeout should kick in
+                await asyncio.sleep(100)
+
+        async def mock_phase1(sim, cfg, client):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2a(sim, cfg, client, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase2b(sim, cfg, client, master_results, intentions):
+            return PhaseResult(success=True, data={})
+
+        async def mock_phase3(sim, cfg, master_results):
+            return PhaseResult(success=True, data={"pending_memories": {}})
+
+        async def mock_phase4(sim, cfg, client, memories):
+            return PhaseResult(success=True, data=None)
+
+        with (
+            patch("src.runner.execute_phase1", mock_phase1),
+            patch("src.runner.execute_phase2a", mock_phase2a),
+            patch("src.runner.execute_phase2b", mock_phase2b),
+            patch("src.runner.execute_phase3", mock_phase3),
+            patch("src.runner.execute_phase4", mock_phase4),
+            patch("src.runner.NARRATOR_TIMEOUT", 0.1),  # Short timeout for test
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
+            runner = TickRunner(mock_config, [HangingNarrator()])
+            result = await runner.run_tick(simulation, sim_path)
+
+        # Tick should succeed despite narrator hanging
         assert result.success is True

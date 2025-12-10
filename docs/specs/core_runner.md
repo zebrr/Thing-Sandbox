@@ -60,6 +60,10 @@ Initialize tick runner.
 
 Note: Uses `load_simulation()` and `save_simulation()` functions directly from `utils.storage`.
 
+#### Constants
+
+- `NARRATOR_TIMEOUT = 30.0` — seconds to wait for narrator tasks at end of tick
+
 #### Internal Attributes (set during run_tick)
 
 - `_char_entities: list[dict[str, Any]]` — entity dicts for characters (mutated by LLMClient)
@@ -68,6 +72,7 @@ Note: Uses `load_simulation()` and `save_simulation()` functions directly from `
 - `_narratives: dict[str, str]` — narratives extracted from phase 2b
 - `_phase_data: dict[str, PhaseData]` — per-phase execution data for TickLogger
 - `_pending_memories: dict[str, str]` — pending memory texts from phase 3 for TickLogger
+- `_pending_narrator_tasks: list[asyncio.Task[None]]` — fire-and-forget tasks for on_phase_complete
 
 #### TickRunner.run_tick(simulation: Simulation, sim_path: Path) -> TickReport
 
@@ -96,25 +101,27 @@ Execute one complete tick of simulation.
 1. Receive simulation (already loaded by CLI)
 2. Validate status == "paused"
 3. Set status = "running" (in memory only)
-3b. Notify narrators via _notify_tick_start(sim_id, tick_number, simulation)
+3a. Initialize _pending_narrator_tasks list
+3b. Notify narrators via await _notify_tick_start(sim_id, tick_number, simulation)
 4. Create entity dicts for LLM clients (_create_entity_dicts)
 5. Initialize tick statistics (_tick_stats = BatchStats())
 6. Execute phases (_execute_phases):
    6.1. Phase 1 — character intentions (N requests, char client)
-        → Notify narrators via _notify_phase_complete("phase1", ...)
+        → _notify_phase_complete("phase1", ...) — fire-and-forget
    6.2. Phase 2a — scene arbitration (L requests, loc client)
-        → Notify narrators via _notify_phase_complete("phase2a", ...)
+        → _notify_phase_complete("phase2a", ...) — fire-and-forget
    6.3. Phase 2b — narrative generation (L requests, stub)
-        → Notify narrators via _notify_phase_complete("phase2b", ...)
+        → _notify_phase_complete("phase2b", ...) — fire-and-forget
    6.4. Phase 3 — apply results (0 requests)
-        → Notify narrators via _notify_phase_complete("phase3", ...)
+        → _notify_phase_complete("phase3", ...) — fire-and-forget
    6.5. Phase 4 — memory update (N requests, char client)
-        → Notify narrators via _notify_phase_complete("phase4", ...)
+        → _notify_phase_complete("phase4", ...) — fire-and-forget
 7. Sync _openai data back to simulation models (_sync_openai_data)
 8. Aggregate usage into simulation._openai (_aggregate_simulation_usage)
 9. Increment current_tick
 10. Set status = "paused"
 11. Save simulation atomically via save_simulation()
+11b. Await pending narrator tasks via _await_pending_narrator_tasks() (timeout 30s)
 12. Log tick completion with statistics
 12b. Build TickReport with narratives and phase data
 13. Write tick log via TickLogger if output.file.enabled
@@ -200,24 +207,45 @@ Creates separate LLM clients for character and location phases. Logs statistics 
 
 ### _notify_tick_start(sim_id: str, tick_number: int, simulation: Simulation) -> None
 
-Notify all narrators that tick is starting.
+Notify all narrators that tick is starting. Async method, awaited directly.
 
 - **Input**:
   - sim_id — Simulation identifier
   - tick_number — Tick number about to execute
   - simulation — Simulation instance
-- **Side effects**: Calls `on_tick_start` on each narrator
+- **Side effects**: Awaits `on_tick_start` on each narrator
 - **Error handling**: Narrator exceptions are caught, logged, and don't affect tick execution
 
 ### _notify_phase_complete(phase_name: str, phase_data: PhaseData) -> None
 
-Notify all narrators that phase completed.
+Schedule narrator notifications for phase completion using fire-and-forget pattern.
 
 - **Input**:
   - phase_name — Name of completed phase (phase1, phase2a, phase2b, phase3, phase4)
   - phase_data — PhaseData with duration, stats, and output
-- **Side effects**: Calls `on_phase_complete` on each narrator
-- **Error handling**: Narrator exceptions are caught, logged, and don't affect tick execution
+- **Side effects**: Creates asyncio.Task for each narrator, appends to `_pending_narrator_tasks`
+- **Error handling**: Errors handled in `_safe_phase_complete` wrapper
+- **Note**: Tasks are not awaited immediately, collected for batch await at end of tick
+
+### _safe_phase_complete(narrator: Narrator, phase_name: str, phase_data: PhaseData) -> None
+
+Wrapper to catch exceptions from `narrator.on_phase_complete`.
+
+- **Input**:
+  - narrator — Narrator instance to notify
+  - phase_name — Name of completed phase
+  - phase_data — PhaseData with duration, stats, and output
+- **Side effects**: Awaits `on_phase_complete`, logs errors
+- **Error handling**: Catches all exceptions, logs error, doesn't re-raise
+
+### _await_pending_narrator_tasks() -> None
+
+Wait for all pending narrator tasks with timeout.
+
+- **Side effects**: Awaits all tasks in `_pending_narrator_tasks`, clears list
+- **Timeout**: Uses `NARRATOR_TIMEOUT` constant (30 seconds)
+- **Error handling**: TimeoutError logs warning with count of pending tasks
+- **Note**: Called after save_simulation, ensures data safety before waiting
 
 ---
 
@@ -356,6 +384,8 @@ except PhaseError as e:
 - test_runner_calls_on_phase_complete_for_each_phase — verifies 5 calls (one per phase)
 - test_runner_narrator_on_tick_start_error_isolated — error doesn't stop tick
 - test_runner_narrator_on_phase_complete_error_isolated — error doesn't stop tick
+- test_runner_awaits_pending_tasks_at_end — tasks awaited before run_tick returns
+- test_runner_narrator_timeout_doesnt_block — tick succeeds after narrator timeout
 
 ### Integration Tests
 

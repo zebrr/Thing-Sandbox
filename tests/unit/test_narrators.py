@@ -64,12 +64,12 @@ class TestNarratorProtocol:
             def output(self, report: MockTickReport) -> None:
                 pass
 
-            def on_tick_start(
+            async def on_tick_start(
                 self, sim_id: str, tick_number: int, simulation: MockSimulation
             ) -> None:
                 pass
 
-            def on_phase_complete(self, phase_name: str, phase_data: MockPhaseData) -> None:
+            async def on_phase_complete(self, phase_name: str, phase_data: MockPhaseData) -> None:
                 pass
 
         narrator: Narrator = CustomNarrator()  # type: ignore[assignment]
@@ -322,16 +322,18 @@ class TestConsoleNarrator:
         assert "Bob enters the tavern." not in output
         assert "[No narrative]" not in output
 
-    def test_console_narrator_on_tick_start_noop(self) -> None:
+    @pytest.mark.asyncio
+    async def test_console_narrator_on_tick_start_noop(self) -> None:
         """on_tick_start does nothing but doesn't raise."""
         narrator = ConsoleNarrator()
         simulation = MockSimulation()
         # Should not raise
-        narrator.on_tick_start("test-sim", 42, simulation)  # type: ignore[arg-type]
+        await narrator.on_tick_start("test-sim", 42, simulation)  # type: ignore[arg-type]
 
-    def test_console_narrator_on_phase_complete_noop(self) -> None:
+    @pytest.mark.asyncio
+    async def test_console_narrator_on_phase_complete_noop(self) -> None:
         """on_phase_complete does nothing but doesn't raise."""
         narrator = ConsoleNarrator()
         phase_data = MockPhaseData(duration=1.0, stats=None, data={})
         # Should not raise
-        narrator.on_phase_complete("phase1", phase_data)  # type: ignore[arg-type]
+        await narrator.on_phase_complete("phase1", phase_data)  # type: ignore[arg-type]

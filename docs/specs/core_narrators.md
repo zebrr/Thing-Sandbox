@@ -21,11 +21,11 @@ class Narrator(Protocol):
         """Output tick report to destination."""
         ...
 
-    def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
+    async def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
         """Called when tick execution begins."""
         ...
 
-    def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
+    async def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
         """Called after each phase completes successfully."""
         ...
 ```
@@ -40,6 +40,7 @@ Output tick report to destination.
 #### Narrator.on_tick_start(sim_id: str, tick_number: int, simulation: Simulation) -> None
 
 Called when tick execution begins (after status set to "running").
+Async method, awaited directly by runner (fast, no network I/O expected).
 
 - **Input**:
   - sim_id — Simulation identifier
@@ -51,11 +52,13 @@ Called when tick execution begins (after status set to "running").
 #### Narrator.on_phase_complete(phase_name: str, phase_data: PhaseData) -> None
 
 Called after each phase completes successfully.
+Async method using fire-and-forget pattern: runner creates tasks but doesn't await
+immediately. All tasks are awaited at end of tick with timeout (30s).
 
 - **Input**:
   - phase_name — Name of completed phase (phase1, phase2a, phase2b, phase3, phase4)
   - phase_data — PhaseData with duration, stats, and phase output
-- **Side effects**: Implementation-specific (e.g., progress display)
+- **Side effects**: Implementation-specific (e.g., progress display, Telegram messages)
 - **Note**: Default implementations should be no-op
 
 **Error handling:**
@@ -275,12 +278,15 @@ Using `typing.Protocol` for structural subtyping:
 - No inheritance required
 - Duck typing friendly
 - Easy to mock in tests
+- Supports async methods for lifecycle hooks
 
 ```python
 from typing import Protocol
 
 class Narrator(Protocol):
     def output(self, report: TickReport) -> None: ...
+    async def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None: ...
+    async def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None: ...
 ```
 
 ### Box Drawing Characters

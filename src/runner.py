@@ -20,6 +20,7 @@ Example:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Sequence
@@ -44,6 +45,9 @@ if TYPE_CHECKING:
     from src.narrators import Narrator
 
 logger = logging.getLogger(__name__)
+
+# Timeout for awaiting narrator tasks at end of tick
+NARRATOR_TIMEOUT = 30.0
 
 
 class SimulationBusyError(Exception):
@@ -208,8 +212,11 @@ class TickRunner:
         # Step 3: Set status to running (in memory)
         simulation.status = "running"
 
-        # Step 3b: Notify narrators of tick start
-        self._notify_tick_start(sim_id, simulation.current_tick + 1, simulation)
+        # Initialize pending narrator tasks for fire-and-forget pattern
+        self._pending_narrator_tasks: list[asyncio.Task[None]] = []
+
+        # Step 3b: Notify narrators of tick start (await - fast, no network)
+        await self._notify_tick_start(sim_id, simulation.current_tick + 1, simulation)
 
         # Step 4: Create entity dicts for LLM clients
         self._create_entity_dicts(simulation)
@@ -235,6 +242,9 @@ class TickRunner:
 
         # Step 11: Save simulation
         save_simulation(sim_path, simulation)
+
+        # Step 11b: Await pending narrator tasks (fire-and-forget completes here)
+        await self._await_pending_narrator_tasks()
 
         # Step 12: Log tick completion with statistics
         elapsed_time = time.time() - start_time
@@ -552,10 +562,13 @@ class TickRunner:
             except Exception as e:
                 logger.error("Narrator %s failed: %s", type(narrator).__name__, e)
 
-    def _notify_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
+    async def _notify_tick_start(
+        self, sim_id: str, tick_number: int, simulation: Simulation
+    ) -> None:
         """Notify all narrators that tick is starting.
 
-        Narrator failures are logged but don't affect tick execution.
+        Called synchronously (awaited) because it's fast and narrators may need
+        to store simulation reference before phases run.
 
         Args:
             sim_id: Simulation identifier.
@@ -564,21 +577,59 @@ class TickRunner:
         """
         for narrator in self._narrators:
             try:
-                narrator.on_tick_start(sim_id, tick_number, simulation)
+                await narrator.on_tick_start(sim_id, tick_number, simulation)
             except Exception as e:
                 logger.error("Narrator %s on_tick_start failed: %s", type(narrator).__name__, e)
 
     def _notify_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
-        """Notify all narrators that phase completed.
+        """Schedule narrator notifications for phase completion.
 
-        Narrator failures are logged but don't affect tick execution.
+        Uses fire-and-forget pattern: creates tasks but doesn't await them.
+        Tasks are collected in self._pending_narrator_tasks and awaited
+        at end of tick via _await_pending_narrator_tasks().
 
         Args:
             phase_name: Name of completed phase.
             phase_data: Phase execution data.
         """
         for narrator in self._narrators:
-            try:
-                narrator.on_phase_complete(phase_name, phase_data)
-            except Exception as e:
-                logger.error("Narrator %s on_phase_complete failed: %s", type(narrator).__name__, e)
+            task = asyncio.create_task(self._safe_phase_complete(narrator, phase_name, phase_data))
+            self._pending_narrator_tasks.append(task)
+
+    async def _safe_phase_complete(
+        self, narrator: Narrator, phase_name: str, phase_data: PhaseData
+    ) -> None:
+        """Wrapper to catch exceptions from narrator.on_phase_complete.
+
+        Args:
+            narrator: Narrator instance to notify.
+            phase_name: Name of completed phase.
+            phase_data: Phase execution data.
+        """
+        try:
+            await narrator.on_phase_complete(phase_name, phase_data)
+        except Exception as e:
+            logger.error("Narrator %s on_phase_complete failed: %s", type(narrator).__name__, e)
+
+    async def _await_pending_narrator_tasks(self) -> None:
+        """Wait for all pending narrator tasks with timeout.
+
+        Called at end of tick after save. In normal scenario tasks are already
+        done (phases take ~10s, enough for Telegram). Timeout is safety net.
+        """
+        if not self._pending_narrator_tasks:
+            return
+
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*self._pending_narrator_tasks, return_exceptions=True),
+                timeout=NARRATOR_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Narrator tasks timed out after %.1fs (%d tasks pending)",
+                NARRATOR_TIMEOUT,
+                len([t for t in self._pending_narrator_tasks if not t.done()]),
+            )
+        finally:
+            self._pending_narrator_tasks.clear()

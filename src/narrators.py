@@ -47,9 +47,9 @@ class Narrator(Protocol):
         >>> class MyNarrator:
         ...     def output(self, report: TickReport) -> None:
         ...         print(report.tick_number)
-        ...     def on_tick_start(self, sim_id, tick_number, simulation) -> None:
+        ...     async def on_tick_start(self, sim_id, tick_number, simulation) -> None:
         ...         pass
-        ...     def on_phase_complete(self, phase_name, phase_data) -> None:
+        ...     async def on_phase_complete(self, phase_name, phase_data) -> None:
         ...         pass
     """
 
@@ -61,8 +61,10 @@ class Narrator(Protocol):
         """
         ...
 
-    def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
+    async def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
         """Called when tick execution begins.
+
+        Awaited directly by runner (fast, no network I/O expected).
 
         Args:
             sim_id: Simulation identifier.
@@ -71,8 +73,11 @@ class Narrator(Protocol):
         """
         ...
 
-    def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
+    async def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
         """Called after each phase completes successfully.
+
+        Uses fire-and-forget pattern: runner creates tasks but doesn't await
+        immediately. All tasks are awaited at end of tick with timeout.
 
         Args:
             phase_name: Name of completed phase (phase1, phase2a, phase2b, phase3, phase4).
@@ -180,7 +185,7 @@ class ConsoleNarrator:
             encoded = text.encode(sys.stdout.encoding or "utf-8", errors="replace")
             print(encoded.decode(sys.stdout.encoding or "utf-8", errors="replace"))
 
-    def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
+    async def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
         """No-op implementation for tick start event.
 
         Args:
@@ -190,7 +195,7 @@ class ConsoleNarrator:
         """
         pass
 
-    def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
+    async def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
         """No-op implementation for phase complete event.
 
         Args:
