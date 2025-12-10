@@ -64,7 +64,6 @@ class TestResetCommand:
             result = runner.invoke(app, ["reset", sim_id])
 
         assert result.exit_code == EXIT_SUCCESS
-        assert f"[{sim_id}] Reset to template." in result.stdout
 
         # Verify simulation was created
         sim_path = base_path / "simulations" / sim_id

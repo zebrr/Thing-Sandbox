@@ -52,6 +52,7 @@ Resolves output configuration with simulation-specific overrides.
   - If simulation provided and has `output` section in `__pydantic_extra__`, merges those values
   - Merging is done per-channel (console, file, telegram)
   - Simulation values override config.toml values for specific fields
+  - **Fallback**: if `telegram.chat_id` is empty after merge, uses `TELEGRAM_TEST_CHAT_ID` from `.env`
 - **Example**:
   ```python
   config = Config.load()
@@ -107,6 +108,10 @@ OpenAI API key from `.env`. None if not set.
 #### Config.telegram_bot_token: str | None
 
 Telegram bot token from `.env`. None if not set.
+
+#### Config.telegram_test_chat_id: str | None
+
+Default Telegram chat ID from `.env` (TELEGRAM_TEST_CHAT_ID). Used as fallback in `resolve_output()` when `chat_id` is empty after merging config.toml and simulation.json. None if not set.
 
 #### Config.project_root: Path
 
@@ -325,6 +330,7 @@ Located in project root. Optional but recommended.
 ```
 OPENAI_API_KEY=sk-...
 TELEGRAM_BOT_TOKEN=...
+TELEGRAM_TEST_CHAT_ID=...  # Default chat_id fallback
 ```
 
 ---
@@ -470,6 +476,12 @@ except PromptNotFoundError as e:
 - test_output_config_from_toml — output config loaded correctly from config.toml
 - test_output_config_missing_uses_defaults — missing [output] section uses defaults
 - test_output_config_partial_section — partial output section fills missing with defaults
+
+### New Tests (for REFACTOR-CONFIG-001)
+
+- test_resolve_output_fallback_chat_id — empty chat_id after merge uses telegram_test_chat_id from .env
+- test_resolve_output_no_fallback_when_chat_id_set — chat_id in simulation.json not overwritten by fallback
+- test_resolve_output_no_fallback_when_default_empty — empty chat_id and empty telegram_test_chat_id remains empty
 
 ---
 

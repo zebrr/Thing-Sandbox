@@ -160,6 +160,7 @@ class EnvSettings(BaseSettings):
 
     openai_api_key: str | None = None
     telegram_bot_token: str | None = None
+    telegram_test_chat_id: str | None = None
 
 
 def _load_env_settings(env_file_path: Path | None) -> EnvSettings:
@@ -203,6 +204,7 @@ class Config:
         output: OutputConfig,
         openai_api_key: str | None,
         telegram_bot_token: str | None,
+        telegram_test_chat_id: str | None,
         project_root: Path,
     ) -> None:
         """Initialize Config instance.
@@ -216,6 +218,7 @@ class Config:
             output: Output configuration for console, file, and telegram.
             openai_api_key: OpenAI API key from .env.
             telegram_bot_token: Telegram bot token from .env.
+            telegram_test_chat_id: Default chat ID from .env (fallback).
             project_root: Project root directory path.
         """
         self.simulation = simulation
@@ -226,6 +229,7 @@ class Config:
         self.output = output
         self.openai_api_key = openai_api_key
         self.telegram_bot_token = telegram_bot_token
+        self.telegram_test_chat_id = telegram_test_chat_id
         self.project_root = project_root
 
     @classmethod
@@ -338,6 +342,7 @@ class Config:
             output=output,
             openai_api_key=env_settings.openai_api_key,
             telegram_bot_token=env_settings.telegram_bot_token,
+            telegram_test_chat_id=env_settings.telegram_test_chat_id,
             project_root=project_root,
         )
 
@@ -436,6 +441,10 @@ class Config:
                 file_data.update(override["file"])
             if "telegram" in override:
                 telegram_data.update(override["telegram"])
+
+        # Fallback: if chat_id empty after merge, use TELEGRAM_TEST_CHAT_ID from .env
+        if not telegram_data.get("chat_id") and self.telegram_test_chat_id:
+            telegram_data["chat_id"] = self.telegram_test_chat_id
 
         return OutputConfig(
             console=ConsoleOutputConfig.model_validate(console_data),

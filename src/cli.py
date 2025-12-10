@@ -193,7 +193,6 @@ def reset(sim_id: str) -> None:
 
     try:
         reset_simulation(sim_id, config.project_root)
-        typer.echo(f"[{sim_id}] Reset to template.")
     except TemplateNotFoundError:
         typer.echo(f"Template for '{sim_id}' not found", err=True)
         raise typer.Exit(code=EXIT_INPUT_ERROR)

@@ -967,3 +967,87 @@ class TestResolveOutput:
 
         with pytest.raises(ValidationError):
             config.resolve_output(simulation)
+
+    def test_resolve_output_fallback_chat_id(self, tmp_path: Path) -> None:
+        """Empty chat_id after merge uses telegram_test_chat_id from .env."""
+        from datetime import datetime
+
+        from src.utils.storage import Simulation
+
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+        env_file = tmp_path / ".env"
+        env_file.write_text("TELEGRAM_TEST_CHAT_ID=-100999888\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        simulation = Simulation(
+            id="test",
+            current_tick=0,
+            created_at=datetime.now(),
+            status="paused",
+        )
+
+        result = config.resolve_output(simulation)
+        assert result.telegram.chat_id == "-100999888"
+
+    def test_resolve_output_no_fallback_when_chat_id_set(self, tmp_path: Path) -> None:
+        """chat_id in simulation.json is not overwritten by fallback."""
+        from datetime import datetime
+
+        from src.utils.storage import Simulation
+
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+        env_file = tmp_path / ".env"
+        env_file.write_text("TELEGRAM_TEST_CHAT_ID=-100999888\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        simulation = Simulation(
+            id="test",
+            current_tick=0,
+            created_at=datetime.now(),
+            status="paused",
+        )
+        object.__setattr__(
+            simulation,
+            "__pydantic_extra__",
+            {"output": {"telegram": {"chat_id": "123456"}}},
+        )
+
+        result = config.resolve_output(simulation)
+        assert result.telegram.chat_id == "123456"  # Not overwritten
+
+    def test_resolve_output_no_fallback_when_default_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Empty chat_id and empty telegram_test_chat_id remains empty."""
+        from datetime import datetime
+
+        from src.utils.storage import Simulation
+
+        # Clear any existing env var
+        monkeypatch.delenv("TELEGRAM_TEST_CHAT_ID", raising=False)
+
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+        # No .env file or TELEGRAM_TEST_CHAT_ID
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        simulation = Simulation(
+            id="test",
+            current_tick=0,
+            created_at=datetime.now(),
+            status="paused",
+        )
+
+        result = config.resolve_output(simulation)
+        assert result.telegram.chat_id == ""  # Remains empty

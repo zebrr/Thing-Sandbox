@@ -70,7 +70,7 @@ enabled = true
 # Все параметры можно переопределить в simulation.json → output.telegram.*
 # enabled: включить Telegram нарратор (true/false)
 enabled = false
-# chat_id: ID чата/канала (строка с числом, например "1234567890")
+# chat_id: ID чата/канала. Лучше указывать в .env (TELEGRAM_TEST_CHAT_ID) или в simulation.json
 chat_id = ""
 # mode: режим вывода
 #   "none" — отключено
