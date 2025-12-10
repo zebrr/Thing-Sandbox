@@ -256,6 +256,7 @@ class TelegramNarrator:
         mode: str,
         group_intentions: bool,
         group_narratives: bool,
+        message_thread_id: int | None = None,
     ) -> None:
         """Initialize Telegram narrator.
 
@@ -265,12 +266,14 @@ class TelegramNarrator:
             mode: Output mode (narratives, narratives_stats, full, full_stats).
             group_intentions: Group all intentions in one message.
             group_narratives: Group all narratives in one message.
+            message_thread_id: Forum topic ID for supergroups with topics enabled.
         """
         self._client = client
         self._chat_id = chat_id
         self._mode = mode
         self._group_intentions = group_intentions
         self._group_narratives = group_narratives
+        self._message_thread_id = message_thread_id
 
         # Set by on_tick_start, used in on_phase_complete
         self._simulation: Simulation | None = None
@@ -376,7 +379,9 @@ class TelegramNarrator:
 
         message = "\n".join(lines)
         try:
-            success = await self._client.send_message(self._chat_id, message)
+            success = await self._client.send_message(
+                self._chat_id, message, message_thread_id=self._message_thread_id
+            )
             if success:
                 logger.info("Sent %d intentions", len(intentions))
             else:
@@ -417,7 +422,9 @@ class TelegramNarrator:
                 message += stats_footer
 
             try:
-                success = await self._client.send_message(self._chat_id, message)
+                success = await self._client.send_message(
+                    self._chat_id, message, message_thread_id=self._message_thread_id
+                )
                 if success:
                     sent_count += 1
                 else:
@@ -495,7 +502,9 @@ class TelegramNarrator:
 
         message = "\n".join(lines)
         try:
-            success = await self._client.send_message(self._chat_id, message)
+            success = await self._client.send_message(
+                self._chat_id, message, message_thread_id=self._message_thread_id
+            )
             if success:
                 logger.info("Sent %d narratives", len(narratives))
             else:
@@ -536,7 +545,9 @@ class TelegramNarrator:
                 message += stats_footer
 
             try:
-                success = await self._client.send_message(self._chat_id, message)
+                success = await self._client.send_message(
+                    self._chat_id, message, message_thread_id=self._message_thread_id
+                )
                 if success:
                     sent_count += 1
                 else:

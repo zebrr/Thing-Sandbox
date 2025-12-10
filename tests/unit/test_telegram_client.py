@@ -383,6 +383,56 @@ class TestTelegramClient:
         await client.close()
 
     @pytest.mark.asyncio
+    async def test_send_message_with_thread_id(self) -> None:
+        """message_thread_id is included in payload when provided."""
+        client = TelegramClient("test-token")
+        # Pre-populate cache to skip resolution
+        client._resolved_chat_ids["-1001234567890"] = "-1001234567890"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+            await client.send_message(
+                "-1001234567890", "Test message", message_thread_id=42
+            )
+
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+
+        # Check payload includes message_thread_id
+        payload = call_args[1]["json"]
+        assert payload["chat_id"] == "-1001234567890"
+        assert payload["text"] == "Test message"
+        assert payload["message_thread_id"] == 42
+
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_send_message_without_thread_id(self) -> None:
+        """message_thread_id is not in payload when None."""
+        client = TelegramClient("test-token")
+        # Pre-populate cache to skip resolution
+        client._resolved_chat_ids["-1001234567890"] = "-1001234567890"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+            await client.send_message("-1001234567890", "Test message")
+
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+
+        # Check payload does NOT include message_thread_id
+        payload = call_args[1]["json"]
+        assert "message_thread_id" not in payload
+
+        await client.close()
+
+    @pytest.mark.asyncio
     async def test_close_safe_multiple_times(self) -> None:
         """Close is safe to call multiple times."""
         client = TelegramClient("test-token")

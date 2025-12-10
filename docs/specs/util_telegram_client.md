@@ -45,16 +45,17 @@ class TelegramClient:
         connect_timeout: float = 5.0,
         read_timeout: float = 30.0,
     ) -> None
-    
+
     async def send_message(
         self,
         chat_id: str,
         text: str,
         parse_mode: str = "HTML",
+        message_thread_id: int | None = None,
     ) -> bool
-    
+
     async def close(self) -> None
-    
+
     async def __aenter__(self) -> TelegramClient
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None
 ```
@@ -82,6 +83,7 @@ Sends text message to chat. Automatically splits long messages.
   - chat_id — numeric chat/channel ID (can be without minus prefix — auto-detected)
   - text — message text (HTML formatted)
   - parse_mode — Telegram parse mode (default "HTML")
+  - message_thread_id — forum topic ID for supergroups with topics enabled (default: None)
 - **Returns**: `True` if all message parts sent successfully, `False` on any error
 - **Behavior**:
   1. Auto-resolves chat_id format on first use (tries: as-is, `-ID`, `-100ID`)
@@ -122,7 +124,8 @@ Content-Type: application/json
 {
     "chat_id": "123456789",
     "text": "Message text",
-    "parse_mode": "HTML"
+    "parse_mode": "HTML",
+    "message_thread_id": 42  # Optional, only if provided
 }
 ```
 
@@ -334,6 +337,8 @@ client = TelegramClient(
 - test_retries_exhausted — all attempts fail returns False
 - test_context_manager — async with calls close()
 - test_multi_part_message — long text sends multiple requests
+- test_send_message_with_thread_id — message_thread_id included in payload
+- test_send_message_without_thread_id — message_thread_id not in payload when None
 
 ### Integration Tests
 
@@ -367,6 +372,7 @@ Run with: `pytest tests/integration/test_telegram_client_live.py -v -m telegram`
 | Timeout | Retry with exponential backoff |
 | Rate limit (429) | Retry after `Retry-After` seconds |
 | Server error (5xx) | Retry with exponential backoff |
+| Chat migration (400 + migrate_to_chat_id) | Auto-update cache, retry with new chat_id |
 | Client error (4xx) | Log error, return False |
 | Invalid token | Logged as 401, return False |
 | Invalid chat_id | Logged as 400, return False |

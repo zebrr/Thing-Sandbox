@@ -124,6 +124,7 @@ class TelegramNarrator:
         mode: str,
         group_intentions: bool,
         group_narratives: bool,
+        message_thread_id: int | None = None,
     ) -> None
 ```
 
@@ -137,6 +138,7 @@ Initialize Telegram narrator.
   - mode — Output mode: `narratives`, `narratives_stats`, `full`, `full_stats`
   - group_intentions — Group all intentions in one message (True) or send per-character (False)
   - group_narratives — Group all narratives in one message (True) or send per-location (False)
+  - message_thread_id — Forum topic ID for supergroups with topics enabled (default: None)
 
 #### TelegramNarrator.on_tick_start(...) -> None
 
@@ -375,6 +377,7 @@ narrator = TelegramNarrator(
     mode="full_stats",          # narratives, narratives_stats, full, full_stats
     group_intentions=True,      # True: single message, False: per-character
     group_narratives=True,      # True: single message, False: per-location
+    message_thread_id=42,       # Optional: forum topic ID for supergroups
 )
 
 # Used by runner via lifecycle methods:
@@ -448,6 +451,9 @@ class TickRunner:
 - test_output_is_noop — output() does nothing
 - test_error_handling_continues — client errors don't stop processing
 - test_missing_simulation_logs_warning — warning if simulation is None
+- test_message_thread_id_passed_to_client — message_thread_id passed to send_message
+- test_message_thread_id_none_passed_to_client — None passed when not set
+- test_narratives_pass_thread_id — message_thread_id passed for narratives
 
 ### Integration Tests
 

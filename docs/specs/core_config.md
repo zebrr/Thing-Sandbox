@@ -53,6 +53,7 @@ Resolves output configuration with simulation-specific overrides.
   - Merging is done per-channel (console, file, telegram)
   - Simulation values override config.toml values for specific fields
   - **Fallback**: if `telegram.chat_id` is empty after merge, uses `TELEGRAM_TEST_CHAT_ID` from `.env`
+  - **Fallback**: if `telegram.message_thread_id` is None after merge, uses `TELEGRAM_TEST_THREAD_ID` from `.env`
 - **Example**:
   ```python
   config = Config.load()
@@ -112,6 +113,10 @@ Telegram bot token from `.env`. None if not set.
 #### Config.telegram_test_chat_id: str | None
 
 Default Telegram chat ID from `.env` (TELEGRAM_TEST_CHAT_ID). Used as fallback in `resolve_output()` when `chat_id` is empty after merging config.toml and simulation.json. None if not set.
+
+#### Config.telegram_test_thread_id: int | None
+
+Default Telegram thread ID from `.env` (TELEGRAM_TEST_THREAD_ID). Used as fallback in `resolve_output()` when `message_thread_id` is None after merging config.toml and simulation.json. None if not set.
 
 #### Config.project_root: Path
 
@@ -231,6 +236,7 @@ class TelegramOutputConfig(BaseModel):
     mode: Literal["none", "narratives", "narratives_stats", "full", "full_stats"] = "none"
     group_intentions: bool = True
     group_narratives: bool = True
+    message_thread_id: int | None = None
 ```
 
 **Field semantics:**
@@ -244,6 +250,7 @@ class TelegramOutputConfig(BaseModel):
   - "full_stats" — full output with statistics
 - `group_intentions` — whether to group intentions in output (default: True)
 - `group_narratives` — whether to group narratives in output (default: True)
+- `message_thread_id` — forum topic ID for supergroups with topics enabled (default: None)
 
 ---
 
@@ -321,6 +328,7 @@ chat_id = ""
 mode = "none"
 group_intentions = true
 group_narratives = true
+# message_thread_id =
 ```
 
 ### .env
@@ -331,6 +339,7 @@ Located in project root. Optional but recommended.
 OPENAI_API_KEY=sk-...
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_TEST_CHAT_ID=...  # Default chat_id fallback
+TELEGRAM_TEST_THREAD_ID=...  # Default message_thread_id fallback (int)
 ```
 
 ---
@@ -482,6 +491,16 @@ except PromptNotFoundError as e:
 - test_resolve_output_fallback_chat_id — empty chat_id after merge uses telegram_test_chat_id from .env
 - test_resolve_output_no_fallback_when_chat_id_set — chat_id in simulation.json not overwritten by fallback
 - test_resolve_output_no_fallback_when_default_empty — empty chat_id and empty telegram_test_chat_id remains empty
+
+### New Tests (for TS-TG-TOPICS-001)
+
+- test_message_thread_id_default — message_thread_id defaults to None
+- test_message_thread_id_custom — message_thread_id accepts int value
+- test_env_loading_with_thread_id — TELEGRAM_TEST_THREAD_ID loaded from .env
+- test_output_config_from_toml_with_thread_id — message_thread_id loaded from config.toml
+- test_resolve_output_fallback_thread_id — empty message_thread_id uses telegram_test_thread_id from .env
+- test_resolve_output_no_fallback_when_thread_id_set — message_thread_id in simulation.json not overwritten
+- test_resolve_output_partial_override_thread_id — partial override merges correctly
 
 ---
 

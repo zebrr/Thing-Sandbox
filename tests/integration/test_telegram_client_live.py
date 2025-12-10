@@ -41,36 +41,54 @@ def chat_id() -> str:
     return test_chat_id
 
 
+@pytest.fixture
+def thread_id() -> int | None:
+    """Get test thread ID from .env (optional)."""
+    load_dotenv()
+    thread_id_str = os.environ.get("TELEGRAM_TEST_THREAD_ID")
+    if thread_id_str:
+        return int(thread_id_str)
+    return None
+
+
 class TestTelegramClientLive:
     """Live integration tests with real Telegram API."""
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
-    async def test_send_simple_message(self, bot_token: str, chat_id: str) -> None:
+    async def test_send_simple_message(
+        self, bot_token: str, chat_id: str, thread_id: int | None
+    ) -> None:
         """Send a simple text message to test chat."""
         async with TelegramClient(bot_token) as client:
             result = await client.send_message(
                 chat_id=chat_id,
                 text="<b>Test message</b> from TelegramClient integration test",
+                message_thread_id=thread_id,
             )
 
         assert result is True
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
-    async def test_send_unicode_message(self, bot_token: str, chat_id: str) -> None:
+    async def test_send_unicode_message(
+        self, bot_token: str, chat_id: str, thread_id: int | None
+    ) -> None:
         """Send message with Unicode characters."""
         async with TelegramClient(bot_token) as client:
             result = await client.send_message(
                 chat_id=chat_id,
                 text="Тестовое сообщение с юникодом 🎉",
+                message_thread_id=thread_id,
             )
 
         assert result is True
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(60)
-    async def test_send_long_message(self, bot_token: str, chat_id: str) -> None:
+    async def test_send_long_message(
+        self, bot_token: str, chat_id: str, thread_id: int | None
+    ) -> None:
         """Send message that exceeds 4096 char limit (triggers split)."""
         # Create message > 4096 chars
         long_text = "Paragraph one. " * 200 + "\n\n" + "Paragraph two. " * 200
@@ -79,6 +97,7 @@ class TestTelegramClientLive:
             result = await client.send_message(
                 chat_id=chat_id,
                 text=long_text,
+                message_thread_id=thread_id,
             )
 
         assert result is True

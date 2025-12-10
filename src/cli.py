@@ -129,6 +129,7 @@ async def _run_tick(
                     mode=output_config.telegram.mode,
                     group_intentions=output_config.telegram.group_intentions,
                     group_narratives=output_config.telegram.group_narratives,
+                    message_thread_id=output_config.telegram.message_thread_id,
                 )
             )
 

@@ -432,13 +432,19 @@ class MockTelegramClient:
     """Mock TelegramClient for testing."""
 
     def __init__(self, should_fail: bool = False) -> None:
-        self.messages: list[tuple[str, str]] = []
+        self.messages: list[tuple[str, str, int | None]] = []
         self.should_fail = should_fail
 
-    async def send_message(self, chat_id: str, text: str, parse_mode: str = "HTML") -> bool:
+    async def send_message(
+        self,
+        chat_id: str,
+        text: str,
+        parse_mode: str = "HTML",
+        message_thread_id: int | None = None,
+    ) -> bool:
         if self.should_fail:
             return False
-        self.messages.append((chat_id, text))
+        self.messages.append((chat_id, text, message_thread_id))
         return True
 
 
@@ -451,6 +457,7 @@ class TestTelegramNarrator:
         mode: str = "full_stats",
         group_intentions: bool = True,
         group_narratives: bool = True,
+        message_thread_id: int | None = None,
     ) -> Any:
         """Helper to create TelegramNarrator with mock client."""
         from src.narrators import TelegramNarrator
@@ -463,6 +470,7 @@ class TestTelegramNarrator:
             mode=mode,
             group_intentions=group_intentions,
             group_narratives=group_narratives,
+            message_thread_id=message_thread_id,
         )
 
     def _make_simulation(self) -> MockSimulation:
@@ -804,3 +812,64 @@ class TestTelegramNarrator:
         await narrator.on_phase_complete("phase1", phase_data)  # type: ignore[arg-type]
 
         assert "simulation is None" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_message_thread_id_passed_to_client(self) -> None:
+        """message_thread_id is passed to send_message calls."""
+        client = MockTelegramClient()
+        narrator = self._make_narrator(client=client, mode="full", message_thread_id=42)
+        await narrator.on_tick_start("test-sim", 42, self._make_simulation())  # type: ignore[arg-type]
+
+        intentions = {"bob": MockIntentionResponse(intention="Build")}
+        phase_data = MockPhaseData(
+            duration=2.0,
+            stats=MockBatchStats(total_tokens=1000, reasoning_tokens=500),
+            data=intentions,
+        )
+
+        await narrator.on_phase_complete("phase1", phase_data)  # type: ignore[arg-type]
+
+        assert len(client.messages) == 1
+        # Check message_thread_id is in the tuple
+        assert client.messages[0][2] == 42
+
+    @pytest.mark.asyncio
+    async def test_message_thread_id_none_passed_to_client(self) -> None:
+        """message_thread_id=None is passed when not set."""
+        client = MockTelegramClient()
+        narrator = self._make_narrator(client=client, mode="full")  # No thread_id
+        await narrator.on_tick_start("test-sim", 42, self._make_simulation())  # type: ignore[arg-type]
+
+        intentions = {"bob": MockIntentionResponse(intention="Build")}
+        phase_data = MockPhaseData(
+            duration=2.0,
+            stats=MockBatchStats(total_tokens=1000, reasoning_tokens=500),
+            data=intentions,
+        )
+
+        await narrator.on_phase_complete("phase1", phase_data)  # type: ignore[arg-type]
+
+        assert len(client.messages) == 1
+        # Check message_thread_id is None
+        assert client.messages[0][2] is None
+
+    @pytest.mark.asyncio
+    async def test_narratives_pass_thread_id(self) -> None:
+        """message_thread_id is passed for narrative messages too."""
+        client = MockTelegramClient()
+        narrator = self._make_narrator(
+            client=client, mode="narratives", message_thread_id=99
+        )
+        await narrator.on_tick_start("test-sim", 42, self._make_simulation())  # type: ignore[arg-type]
+
+        narratives = {"tavern": MockNarrativeResponse(narrative="Fire crackles.")}
+        phase_data = MockPhaseData(
+            duration=4.0,
+            stats=MockBatchStats(total_tokens=3000, reasoning_tokens=1000),
+            data=narratives,
+        )
+
+        await narrator.on_phase_complete("phase2b", phase_data)  # type: ignore[arg-type]
+
+        assert len(client.messages) == 1
+        assert client.messages[0][2] == 99

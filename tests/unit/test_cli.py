@@ -160,6 +160,7 @@ class TestTelegramIntegration:
                 mode="full",
                 group_intentions=True,
                 group_narratives=True,
+                message_thread_id=None,
             )
 
             # Runner should receive 2 narrators (Console + Telegram)

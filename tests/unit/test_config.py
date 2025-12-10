@@ -1051,3 +1051,142 @@ class TestResolveOutput:
 
         result = config.resolve_output(simulation)
         assert result.telegram.chat_id == ""  # Remains empty
+
+
+class TestMessageThreadId:
+    """Tests for message_thread_id configuration."""
+
+    def test_message_thread_id_default(self) -> None:
+        """message_thread_id defaults to None."""
+        config = TelegramOutputConfig()
+        assert config.message_thread_id is None
+
+    def test_message_thread_id_custom(self) -> None:
+        """message_thread_id accepts int value."""
+        config = TelegramOutputConfig(message_thread_id=42)
+        assert config.message_thread_id == 42
+
+    def test_env_loading_with_thread_id(self, tmp_path: Path) -> None:
+        """TELEGRAM_TEST_THREAD_ID is loaded from .env file."""
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\nname = 'test'\n", encoding="utf-8")
+        env_file = tmp_path / ".env"
+        env_file.write_text("TELEGRAM_TEST_THREAD_ID=123\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        assert config.telegram_test_thread_id == 123
+
+    def test_output_config_from_toml_with_thread_id(self, tmp_path: Path) -> None:
+        """message_thread_id is loaded correctly from config.toml."""
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(
+            make_minimal_config_toml()
+            + """
+[output.telegram]
+enabled = true
+chat_id = "test-chat"
+message_thread_id = 456
+""",
+            encoding="utf-8",
+        )
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        assert config.output.telegram.message_thread_id == 456
+
+    def test_resolve_output_fallback_thread_id(self, tmp_path: Path) -> None:
+        """Empty message_thread_id after merge uses telegram_test_thread_id from .env."""
+        from datetime import datetime
+
+        from src.utils.storage import Simulation
+
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+        env_file = tmp_path / ".env"
+        env_file.write_text("TELEGRAM_TEST_THREAD_ID=789\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        simulation = Simulation(
+            id="test",
+            current_tick=0,
+            created_at=datetime.now(),
+            status="paused",
+        )
+
+        result = config.resolve_output(simulation)
+        assert result.telegram.message_thread_id == 789
+
+    def test_resolve_output_no_fallback_when_thread_id_set(self, tmp_path: Path) -> None:
+        """message_thread_id in simulation.json is not overwritten by fallback."""
+        from datetime import datetime
+
+        from src.utils.storage import Simulation
+
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(make_minimal_config_toml(), encoding="utf-8")
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+        env_file = tmp_path / ".env"
+        env_file.write_text("TELEGRAM_TEST_THREAD_ID=789\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        simulation = Simulation(
+            id="test",
+            current_tick=0,
+            created_at=datetime.now(),
+            status="paused",
+        )
+        object.__setattr__(
+            simulation,
+            "__pydantic_extra__",
+            {"output": {"telegram": {"message_thread_id": 111}}},
+        )
+
+        result = config.resolve_output(simulation)
+        assert result.telegram.message_thread_id == 111  # Not overwritten
+
+    def test_resolve_output_partial_override_thread_id(self, tmp_path: Path) -> None:
+        """Partial override merges with defaults for message_thread_id."""
+        from datetime import datetime
+
+        from src.utils.storage import Simulation
+
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(
+            make_minimal_config_toml()
+            + """
+[output.telegram]
+message_thread_id = 222
+""",
+            encoding="utf-8",
+        )
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\n", encoding="utf-8")
+
+        config = Config.load(config_path=config_toml, project_root=tmp_path)
+
+        simulation = Simulation(
+            id="test",
+            current_tick=0,
+            created_at=datetime.now(),
+            status="paused",
+        )
+        # Simulation has chat_id override but not message_thread_id
+        object.__setattr__(
+            simulation,
+            "__pydantic_extra__",
+            {"output": {"telegram": {"chat_id": "999"}}},
+        )
+
+        result = config.resolve_output(simulation)
+        assert result.telegram.chat_id == "999"  # From simulation override
+        assert result.telegram.message_thread_id == 222  # From config.toml default

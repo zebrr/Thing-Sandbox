@@ -260,6 +260,7 @@ class TelegramClient:
         chat_id: str,
         text: str,
         parse_mode: str = "HTML",
+        message_thread_id: int | None = None,
     ) -> bool:
         """Send text message to chat. Automatically splits long messages.
 
@@ -272,6 +273,7 @@ class TelegramClient:
             chat_id: Numeric chat/channel ID (can be without minus prefix).
             text: Message text (HTML formatted).
             parse_mode: Telegram parse mode (default "HTML").
+            message_thread_id: Forum topic ID for supergroups with topics enabled.
 
         Returns:
             True if all message parts sent successfully, False on any error.
@@ -293,8 +295,25 @@ class TelegramClient:
                 len(part),
             )
 
-            success = await self._send_single_message(resolved_id, part, parse_mode)
-            if not success:
+            result = await self._send_single_message(
+                resolved_id, part, parse_mode, message_thread_id
+            )
+
+            # Handle migration: result is new chat_id string
+            if isinstance(result, str):
+                logger.info(
+                    "Updating cached chat_id %s -> %s due to migration",
+                    chat_id,
+                    result,
+                )
+                self._resolved_chat_ids[chat_id] = result
+                resolved_id = result
+                # Retry with new chat_id
+                result = await self._send_single_message(
+                    resolved_id, part, parse_mode, message_thread_id
+                )
+
+            if not result:
                 return False
 
         return True
@@ -360,23 +379,27 @@ class TelegramClient:
         chat_id: str,
         text: str,
         parse_mode: str,
-    ) -> bool:
+        message_thread_id: int | None = None,
+    ) -> bool | str:
         """Send single message with retry logic.
 
         Args:
             chat_id: Target chat ID.
             text: Message text.
             parse_mode: Telegram parse mode.
+            message_thread_id: Forum topic ID for supergroups with topics enabled.
 
         Returns:
-            True on success, False on failure.
+            True on success, False on failure, or new chat_id string if migration detected.
         """
         url = f"{self.BASE_URL}/bot{self._bot_token}/sendMessage"
-        payload = {
+        payload: dict[str, str | int] = {
             "chat_id": chat_id,
             "text": text,
             "parse_mode": parse_mode,
         }
+        if message_thread_id is not None:
+            payload["message_thread_id"] = message_thread_id
 
         for attempt in range(self._max_retries + 1):
             try:
@@ -416,7 +439,21 @@ class TelegramClient:
                         continue
 
                 else:
-                    # Client error (4xx except 429) - no retry
+                    # Client error (4xx except 429) - check for migration
+                    if response.status_code == 400:
+                        try:
+                            data = response.json()
+                            migrate_to = data.get("parameters", {}).get("migrate_to_chat_id")
+                            if isinstance(migrate_to, int):
+                                logger.info(
+                                    "Chat %s migrated to %s",
+                                    chat_id,
+                                    migrate_to,
+                                )
+                                return str(migrate_to)  # Return new chat_id for retry
+                        except Exception:
+                            pass  # Failed to parse, fall through to error
+
                     logger.error(
                         "Telegram API error %d for chat %s: %s",
                         response.status_code,

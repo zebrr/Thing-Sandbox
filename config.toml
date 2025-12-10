@@ -83,3 +83,5 @@ mode = "none"
 group_intentions = true
 # group_narratives: группировать нарративы в одно сообщение (true/false)
 group_narratives = true
+# message_thread_id: ID топика форума для супергрупп (целое число или пусто)
+# message_thread_id =
