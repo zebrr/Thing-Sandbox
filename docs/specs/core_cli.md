@@ -219,7 +219,8 @@ In continuous mode, handle SIGINT/SIGTERM:
   - utils.storage (Storage, SimulationNotFoundError)
   - utils.exit_codes
   - utils.logging_config (setup_logging)
-  - narrators (ConsoleNarrator)
+  - narrators (ConsoleNarrator, TelegramNarrator)
+  - utils.telegram_client (TelegramClient)
 
 ---
 
@@ -272,6 +273,10 @@ done
 - test_reset_command_success — reset completes, exit 0
 - test_reset_command_template_not_found — exit 2
 - test_reset_command_storage_error — exit 5
+- test_cli_creates_telegram_narrator — TelegramNarrator created when enabled with token
+- test_cli_warns_no_token — warning when enabled but no token
+- test_cli_telegram_disabled — no TelegramNarrator when disabled
+- test_cli_telegram_mode_none — no TelegramNarrator when mode="none"
 
 ### Integration Tests
 
@@ -333,6 +338,21 @@ def run(sim_id: str) -> None:
 
 async def _run_tick(config, simulation, sim_path, output_config) -> None:
     narrators = [ConsoleNarrator(show_narratives=output_config.console.show_narratives)]
+
+    # Telegram narrator (if enabled and mode != none)
+    if output_config.telegram.enabled and output_config.telegram.mode != "none":
+        if not config.telegram_bot_token:
+            typer.echo("Telegram enabled but TELEGRAM_BOT_TOKEN not set", err=True)
+        else:
+            client = TelegramClient(config.telegram_bot_token)
+            narrators.append(TelegramNarrator(
+                client=client,
+                chat_id=output_config.telegram.chat_id,
+                mode=output_config.telegram.mode,
+                group_intentions=output_config.telegram.group_intentions,
+                group_narratives=output_config.telegram.group_narratives,
+            ))
+
     runner = TickRunner(config, narrators)
     await runner.run_tick(simulation, sim_path)
 ```

@@ -2,8 +2,9 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from src.cli import app
@@ -102,3 +103,225 @@ class TestResetCommand:
 
         assert result.exit_code == EXIT_IO_ERROR
         assert "Storage error" in result.output
+
+
+class TestTelegramIntegration:
+    """Tests for TelegramNarrator integration in CLI.
+
+    These tests directly test the _run_tick async function to verify
+    TelegramNarrator creation logic.
+    """
+
+    @pytest.mark.asyncio
+    async def test_cli_creates_telegram_narrator(self) -> None:
+        """TelegramNarrator is created when enabled, mode != none, and token present."""
+        from src.cli import _run_tick
+        from src.config import (
+            ConsoleOutputConfig,
+            FileOutputConfig,
+            OutputConfig,
+            TelegramOutputConfig,
+        )
+
+        mock_config = MagicMock()
+        mock_config.telegram_bot_token = "test-token-123"
+
+        mock_simulation = MagicMock()
+        mock_sim_path = Path("/fake/path")
+        mock_output_config = OutputConfig(
+            console=ConsoleOutputConfig(show_narratives=True),
+            file=FileOutputConfig(enabled=True),
+            telegram=TelegramOutputConfig(
+                enabled=True,
+                chat_id="-100123456",
+                mode="full",
+                group_intentions=True,
+                group_narratives=True,
+            ),
+        )
+
+        with (
+            patch("src.cli.TelegramClient") as mock_client_class,
+            patch("src.cli.TelegramNarrator") as mock_narrator_class,
+            patch("src.cli.TickRunner") as mock_runner_class,
+        ):
+            mock_runner_instance = MagicMock()
+            mock_runner_instance.run_tick = AsyncMock()
+            mock_runner_class.return_value = mock_runner_instance
+
+            await _run_tick(mock_config, mock_simulation, mock_sim_path, mock_output_config)
+
+            # TelegramClient should be created with token
+            mock_client_class.assert_called_once_with("test-token-123")
+
+            # TelegramNarrator should be created with correct params
+            mock_narrator_class.assert_called_once_with(
+                client=mock_client_class.return_value,
+                chat_id="-100123456",
+                mode="full",
+                group_intentions=True,
+                group_narratives=True,
+            )
+
+            # Runner should receive 2 narrators (Console + Telegram)
+            call_args = mock_runner_class.call_args
+            narrators_list = call_args[0][1]  # Second positional arg
+            assert len(narrators_list) == 2
+
+    @pytest.mark.asyncio
+    async def test_cli_warns_no_token(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Warning is shown when Telegram enabled but token not set."""
+        from src.cli import _run_tick
+        from src.config import (
+            ConsoleOutputConfig,
+            FileOutputConfig,
+            OutputConfig,
+            TelegramOutputConfig,
+        )
+
+        mock_config = MagicMock()
+        mock_config.telegram_bot_token = None  # No token
+
+        mock_simulation = MagicMock()
+        mock_sim_path = Path("/fake/path")
+        mock_output_config = OutputConfig(
+            console=ConsoleOutputConfig(show_narratives=True),
+            file=FileOutputConfig(enabled=True),
+            telegram=TelegramOutputConfig(
+                enabled=True,
+                chat_id="-100123456",
+                mode="full",
+            ),
+        )
+
+        with (
+            patch("src.cli.TelegramClient") as mock_client_class,
+            patch("src.cli.TelegramNarrator") as mock_narrator_class,
+            patch("src.cli.TickRunner") as mock_runner_class,
+            patch("src.cli.typer.echo") as mock_echo,
+        ):
+            mock_runner_instance = MagicMock()
+            mock_runner_instance.run_tick = AsyncMock()
+            mock_runner_class.return_value = mock_runner_instance
+
+            await _run_tick(mock_config, mock_simulation, mock_sim_path, mock_output_config)
+
+            # Warning should be called with err=True
+            mock_echo.assert_called_once_with(
+                "Telegram enabled but TELEGRAM_BOT_TOKEN not set", err=True
+            )
+
+            # TelegramClient should NOT be created
+            mock_client_class.assert_not_called()
+
+            # TelegramNarrator should NOT be created
+            mock_narrator_class.assert_not_called()
+
+            # Runner should receive only 1 narrator (Console only)
+            call_args = mock_runner_class.call_args
+            narrators_list = call_args[0][1]
+            assert len(narrators_list) == 1
+
+    @pytest.mark.asyncio
+    async def test_cli_telegram_disabled(self) -> None:
+        """TelegramNarrator is NOT created when telegram.enabled=False."""
+        from src.cli import _run_tick
+        from src.config import (
+            ConsoleOutputConfig,
+            FileOutputConfig,
+            OutputConfig,
+            TelegramOutputConfig,
+        )
+
+        mock_config = MagicMock()
+        mock_config.telegram_bot_token = "test-token-123"
+
+        mock_simulation = MagicMock()
+        mock_sim_path = Path("/fake/path")
+        mock_output_config = OutputConfig(
+            console=ConsoleOutputConfig(show_narratives=True),
+            file=FileOutputConfig(enabled=True),
+            telegram=TelegramOutputConfig(
+                enabled=False,  # Disabled
+                chat_id="-100123456",
+                mode="full",
+            ),
+        )
+
+        with (
+            patch("src.cli.TelegramClient") as mock_client_class,
+            patch("src.cli.TelegramNarrator") as mock_narrator_class,
+            patch("src.cli.TickRunner") as mock_runner_class,
+            patch("src.cli.typer.echo") as mock_echo,
+        ):
+            mock_runner_instance = MagicMock()
+            mock_runner_instance.run_tick = AsyncMock()
+            mock_runner_class.return_value = mock_runner_instance
+
+            await _run_tick(mock_config, mock_simulation, mock_sim_path, mock_output_config)
+
+            # No warning should be shown
+            mock_echo.assert_not_called()
+
+            # TelegramClient should NOT be created
+            mock_client_class.assert_not_called()
+
+            # TelegramNarrator should NOT be created
+            mock_narrator_class.assert_not_called()
+
+            # Runner should receive only 1 narrator (Console only)
+            call_args = mock_runner_class.call_args
+            narrators_list = call_args[0][1]
+            assert len(narrators_list) == 1
+
+    @pytest.mark.asyncio
+    async def test_cli_telegram_mode_none(self) -> None:
+        """TelegramNarrator is NOT created when telegram.mode='none'."""
+        from src.cli import _run_tick
+        from src.config import (
+            ConsoleOutputConfig,
+            FileOutputConfig,
+            OutputConfig,
+            TelegramOutputConfig,
+        )
+
+        mock_config = MagicMock()
+        mock_config.telegram_bot_token = "test-token-123"
+
+        mock_simulation = MagicMock()
+        mock_sim_path = Path("/fake/path")
+        mock_output_config = OutputConfig(
+            console=ConsoleOutputConfig(show_narratives=True),
+            file=FileOutputConfig(enabled=True),
+            telegram=TelegramOutputConfig(
+                enabled=True,
+                chat_id="-100123456",
+                mode="none",  # Mode is none
+            ),
+        )
+
+        with (
+            patch("src.cli.TelegramClient") as mock_client_class,
+            patch("src.cli.TelegramNarrator") as mock_narrator_class,
+            patch("src.cli.TickRunner") as mock_runner_class,
+            patch("src.cli.typer.echo") as mock_echo,
+        ):
+            mock_runner_instance = MagicMock()
+            mock_runner_instance.run_tick = AsyncMock()
+            mock_runner_class.return_value = mock_runner_instance
+
+            await _run_tick(mock_config, mock_simulation, mock_sim_path, mock_output_config)
+
+            # No warning should be shown
+            mock_echo.assert_not_called()
+
+            # TelegramClient should NOT be created
+            mock_client_class.assert_not_called()
+
+            # TelegramNarrator should NOT be created
+            mock_narrator_class.assert_not_called()
+
+            # Runner should receive only 1 narrator (Console only)
+            call_args = mock_runner_class.call_args
+            narrators_list = call_args[0][1]
+            assert len(narrators_list) == 1

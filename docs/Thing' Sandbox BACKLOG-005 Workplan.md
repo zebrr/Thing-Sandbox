@@ -354,7 +354,7 @@ logger = logging.getLogger(__name__)
 Форматирование и отправка сообщений в Telegram по мере выполнения тика. Реализует `Narrator` protocol с использованием lifecycle методов.
 Добавляется в `src/narrators.py` согласно архитектуре.
 
-**STATUS: не начат**
+**STATUS: ЗАВЕРШЁН**
 
 ### References
 
@@ -635,7 +635,7 @@ logger = logging.getLogger(__name__)
 
 Подключение TelegramNarrator в CLI. Runner не меняется — он уже вызывает все narrators через `_call_narrators()`.
 
-**STATUS: не начат**
+**STATUS: ЗАВЕРШЁН**
 
 ### References
 

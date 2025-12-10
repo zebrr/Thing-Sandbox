@@ -18,7 +18,7 @@ from pathlib import Path
 import typer
 
 from src.config import Config, ConfigError, OutputConfig
-from src.narrators import ConsoleNarrator
+from src.narrators import ConsoleNarrator, Narrator, TelegramNarrator
 from src.runner import PhaseError, SimulationBusyError, TickRunner
 from src.utils.exit_codes import (
     EXIT_CONFIG_ERROR,
@@ -37,6 +37,7 @@ from src.utils.storage import (
     load_simulation,
     reset_simulation,
 )
+from src.utils.telegram_client import TelegramClient
 
 app = typer.Typer(
     name="thing-sandbox",
@@ -111,7 +112,26 @@ async def _run_tick(
         sim_path: Path to simulation folder.
         output_config: Resolved output configuration.
     """
-    narrators = [ConsoleNarrator(show_narratives=output_config.console.show_narratives)]
+    narrators: list[Narrator] = [
+        ConsoleNarrator(show_narratives=output_config.console.show_narratives)
+    ]
+
+    # Telegram narrator (if enabled and mode != none)
+    if output_config.telegram.enabled and output_config.telegram.mode != "none":
+        if not config.telegram_bot_token:
+            typer.echo("Telegram enabled but TELEGRAM_BOT_TOKEN not set", err=True)
+        else:
+            client = TelegramClient(config.telegram_bot_token)
+            narrators.append(
+                TelegramNarrator(
+                    client=client,
+                    chat_id=output_config.telegram.chat_id,
+                    mode=output_config.telegram.mode,
+                    group_intentions=output_config.telegram.group_intentions,
+                    group_narratives=output_config.telegram.group_narratives,
+                )
+            )
+
     runner = TickRunner(config, narrators)
 
     await runner.run_tick(simulation, sim_path)
