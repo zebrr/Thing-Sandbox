@@ -97,6 +97,68 @@ No-op implementation. Does nothing.
 
 No-op implementation. Does nothing.
 
+### escape_html
+
+Module-level helper function for HTML escaping.
+
+```python
+def escape_html(text: str) -> str
+```
+
+Escapes HTML special characters for Telegram HTML parse mode.
+
+- **Input**: text — Raw text that may contain HTML special characters
+- **Returns**: Text safe for Telegram HTML parse mode
+- **Escapes**: `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`
+
+### TelegramNarrator
+
+Sends tick updates to Telegram channel via lifecycle methods.
+
+```python
+class TelegramNarrator:
+    def __init__(
+        self,
+        client: TelegramClient,
+        chat_id: str,
+        mode: str,
+        group_intentions: bool,
+        group_narratives: bool,
+    ) -> None
+```
+
+#### TelegramNarrator.\_\_init\_\_(...) -> None
+
+Initialize Telegram narrator.
+
+- **Parameters**:
+  - client — TelegramClient instance (from utils.telegram_client)
+  - chat_id — Target chat/channel ID
+  - mode — Output mode: `narratives`, `narratives_stats`, `full`, `full_stats`
+  - group_intentions — Group all intentions in one message (True) or send per-character (False)
+  - group_narratives — Group all narratives in one message (True) or send per-location (False)
+
+#### TelegramNarrator.on_tick_start(...) -> None
+
+Store simulation reference for name lookups.
+
+- **Input**: sim_id, tick_number, simulation
+- **Side effects**: Stores simulation, resets phase2a stats accumulator
+
+#### TelegramNarrator.on_phase_complete(...) -> None
+
+Send messages after relevant phases.
+
+- **Input**: phase_name, phase_data
+- **Behavior**:
+  - `phase1` + mode in (full, full_stats) → sends intentions
+  - `phase2a` → stores stats for combined Phase 2 footer
+  - `phase2b` → sends narratives with combined Phase 2 stats
+
+#### TelegramNarrator.output(...) -> None
+
+No-op. All messages sent in on_phase_complete.
+
 ---
 
 ## Output Formats
@@ -128,9 +190,66 @@ Wind rustles through the ancient oaks. A distant wolf howls.
 - Location with empty narrative — shown with `[No narrative]` marker
 - All locations are always printed
 
-### TelegramNarrator (Future - after MVP)
+### TelegramNarrator
 
-Sends narratives as Telegram messages.
+Sends messages via Telegram Bot API using HTML formatting.
+
+#### Intentions (mode=full/full_stats, grouped)
+
+```html
+🎯 <b>{sim_id} — tick #{tick_number} | Intentions</b>
+
+<b>{char_name}:</b>
+{intention}
+
+<b>{char_name}:</b>
+{intention}
+
+───
+📊 <i>Phase 1: {total_tokens:,} tok · {reasoning_tokens:,} reason · {duration:.1f}s</i>
+```
+
+#### Intentions (mode=full/full_stats, per-character)
+
+N messages. Stats footer only on last:
+
+```html
+🎯 <b>{sim_id} — tick #{tick_number} | {char_name}</b>
+
+{intention}
+```
+
+#### Narratives (all modes except none, grouped)
+
+```html
+📖 <b>{sim_id} — tick #{tick_number} | Narratives</b>
+
+<b>{loc_name}</b>
+{narrative}
+
+<b>{loc_name}</b>
+{narrative}
+
+───
+📊 <i>Phase 2: {total_tokens:,} tok · {reasoning_tokens:,} reason · {duration:.1f}s</i>
+```
+
+#### Narratives (per-location)
+
+M messages. Stats footer only on last:
+
+```html
+📖 <b>{sim_id} — tick #{tick_number} | {loc_name}</b>
+
+{narrative}
+```
+
+#### Stats Footer
+
+- Shown only for `_stats` modes (narratives_stats, full_stats)
+- Only on last message of each type
+- For narratives: combined Phase 2a + Phase 2b stats
+- Separator: `───` (U+2500 box drawing)
 
 ---
 
@@ -153,12 +272,14 @@ for narrator in narrators:
 
 ConsoleNarrator may fail if stdout is closed (rare). Logged as warning.
 
-### Network Errors (Future)
+### Telegram Errors
 
-TelegramNarrator network failures:
-- Logged as error
-- Don't retry (tick already saved)
-- User can re-read from TickLogger output
+TelegramNarrator error handling:
+- TelegramClient errors → logged as WARNING, continue with next message
+- Missing simulation (on_tick_start not called) → logged as WARNING, skip
+- Lifecycle methods never raise exceptions (runner isolates anyway)
+- After tick save, if Telegram times out → data safe on disk, logged as WARNING
+- Individual message failures don't stop subsequent messages
 
 ---
 
@@ -166,7 +287,11 @@ TelegramNarrator network failures:
 
 - **Standard Library**: logging, sys, typing (Protocol)
 - **External**: None
-- **Internal**: runner (TickReport, PhaseData — via TYPE_CHECKING), utils.storage (Simulation — via TYPE_CHECKING)
+- **Internal**:
+  - runner (TickReport, PhaseData — via TYPE_CHECKING)
+  - utils.storage (Simulation — via TYPE_CHECKING)
+  - utils.llm (BatchStats)
+  - utils.telegram_client (TelegramClient)
 
 ---
 
@@ -215,15 +340,48 @@ narrator.output(report)  # Only shows tick header/footer
 ### Multiple Narrators
 
 ```python
-from src.narrators import ConsoleNarrator
+from src.narrators import ConsoleNarrator, TelegramNarrator
+from src.utils.telegram_client import TelegramClient
 
+client = TelegramClient(bot_token)
 narrators = [
     ConsoleNarrator(),
-    # TelegramNarrator(config),  # Future
+    TelegramNarrator(
+        client=client,
+        chat_id="-1001234567890",
+        mode="full_stats",
+        group_intentions=True,
+        group_narratives=True,
+    ),
 ]
 
 for narrator in narrators:
     narrator.output(report)
+```
+
+### TelegramNarrator Usage
+
+```python
+from src.narrators import TelegramNarrator
+from src.utils.telegram_client import TelegramClient
+
+# Create client (should be reused across ticks)
+client = TelegramClient("123456:ABC-token")
+
+# Create narrator
+narrator = TelegramNarrator(
+    client=client,
+    chat_id="-1001234567890",
+    mode="full_stats",          # narratives, narratives_stats, full, full_stats
+    group_intentions=True,      # True: single message, False: per-character
+    group_narratives=True,      # True: single message, False: per-location
+)
+
+# Used by runner via lifecycle methods:
+# await narrator.on_tick_start(sim_id, tick_number, simulation)
+# await narrator.on_phase_complete("phase1", phase_data)  # sends intentions
+# await narrator.on_phase_complete("phase2a", phase_data)  # stores stats
+# await narrator.on_phase_complete("phase2b", phase_data)  # sends narratives
 ```
 
 ### In TickRunner
@@ -251,7 +409,15 @@ class TickRunner:
 
 ## Test Coverage
 
-### Unit Tests
+### Unit Tests — escape_html
+
+- test_escape_html_ampersand — `&` → `&amp;`
+- test_escape_html_less_than — `<` → `&lt;`
+- test_escape_html_greater_than — `>` → `&gt;`
+- test_escape_html_combined — `<b>&</b>` → `&lt;b&gt;&amp;&lt;/b&gt;`
+- test_escape_html_no_change — regular text unchanged
+
+### Unit Tests — ConsoleNarrator
 
 - test_console_narrator_output — prints correct format
 - test_console_narrator_empty_narratives — handles empty dict
@@ -262,6 +428,26 @@ class TickRunner:
 - test_console_narrator_show_narratives_false — header/footer only when show_narratives=False
 - test_console_narrator_on_tick_start_noop — on_tick_start does nothing but doesn't raise
 - test_console_narrator_on_phase_complete_noop — on_phase_complete does nothing but doesn't raise
+
+### Unit Tests — TelegramNarrator
+
+- test_telegram_narrator_protocol — satisfies Narrator protocol
+- test_on_tick_start_stores_simulation — simulation reference stored
+- test_on_tick_start_resets_phase2a_stats — phase2a accumulator reset
+- test_on_phase_complete_phase1_sends_intentions — intentions sent for mode=full
+- test_on_phase_complete_phase1_skipped_for_narratives_mode — skipped for mode=narratives
+- test_on_phase_complete_phase2a_stores_stats — stats stored for combination
+- test_on_phase_complete_phase2b_sends_narratives — narratives sent
+- test_intentions_grouped_single_message — grouped: 1 message
+- test_intentions_per_character_multiple_messages — per-char: N messages
+- test_narratives_grouped_single_message — grouped: 1 message
+- test_narratives_per_location_multiple_messages — per-loc: M messages
+- test_stats_footer_only_for_stats_modes — footer only for _stats modes
+- test_stats_footer_only_on_last_message — footer on last message only
+- test_phase2_stats_combined — phase2a + phase2b stats combined
+- test_output_is_noop — output() does nothing
+- test_error_handling_continues — client errors don't stop processing
+- test_missing_simulation_logs_warning — warning if simulation is None
 
 ### Integration Tests
 

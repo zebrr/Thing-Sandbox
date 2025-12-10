@@ -402,8 +402,11 @@ output(report)
 class TelegramNarrator:
     """Sends tick updates to Telegram channel via lifecycle methods.
     
-    Implements Narrator protocol. Uses on_phase_complete to send
+    Implements Narrator protocol. Uses async on_phase_complete to send
     intentions after Phase 1 and narratives after Phase 2b.
+    
+    Runner uses fire-and-forget pattern: creates tasks for on_phase_complete
+    but doesn't await immediately. All tasks awaited at end of tick.
     """
     
     def __init__(
@@ -438,7 +441,7 @@ class TelegramNarrator:
         self._phase2a_stats: BatchStats | None = None
         self._phase2a_duration: float = 0.0
     
-    def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
+    async def on_tick_start(self, sim_id: str, tick_number: int, simulation: Simulation) -> None:
         """Store simulation reference for name lookups."""
         self._simulation = simulation
         self._sim_id = sim_id
@@ -446,49 +449,33 @@ class TelegramNarrator:
         self._phase2a_stats = None
         self._phase2a_duration = 0.0
     
-    def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
+    async def on_phase_complete(self, phase_name: str, phase_data: PhaseData) -> None:
         """Send messages after relevant phases."""
         if phase_name == "phase1" and self._mode in ("full", "full_stats"):
-            self._send_intentions(phase_data)
+            await self._send_intentions(phase_data)
         elif phase_name == "phase2a":
             # Store for combined stats with phase2b
             self._phase2a_stats = phase_data.stats
             self._phase2a_duration = phase_data.duration
         elif phase_name == "phase2b":
-            self._send_narratives(phase_data)
+            await self._send_narratives(phase_data)
     
     def output(self, report: TickReport) -> None:
         """No-op — all messages sent in on_phase_complete."""
         pass
+    
+    async def _send_intentions(self, phase_data: PhaseData) -> None:
+        """Format and send intentions to Telegram."""
+        # Implementation: format messages, call self._client.send_message()
+        pass
+    
+    async def _send_narratives(self, phase_data: PhaseData) -> None:
+        """Format and send narratives to Telegram."""
+        # Implementation: format messages, call self._client.send_message()
+        pass
 ```
 
-### Async в sync контексте
-
-Runner вызывает lifecycle методы синхронно. TelegramClient — async.
-
-**Решение:** Использовать `asyncio.get_event_loop().run_until_complete()` внутри lifecycle методов. Runner уже запущен в async контексте через `asyncio.run()` в CLI, но lifecycle методы вызываются синхронно.
-
-```python
-def _send_intentions(self, phase_data: PhaseData) -> None:
-    """Send intentions to Telegram."""
-    try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(self._send_intentions_async(phase_data))
-    except Exception as e:
-        logger.warning("Failed to send intentions: %s", e)
-```
-
-**Альтернатива (если run_until_complete не работает):** `asyncio.run()` в отдельном потоке:
-
-```python
-def _send_intentions(self, phase_data: PhaseData) -> None:
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(asyncio.run, self._send_intentions_async(phase_data))
-            future.result(timeout=30.0)
-    except Exception as e:
-        logger.warning("Failed to send intentions: %s", e)
-```
+**Async pattern:** Lifecycle методы async. Runner вызывает `on_tick_start` через await (быстрый, без network). Для `on_phase_complete` использует fire-and-forget: `asyncio.create_task()`, все tasks ждём в конце тика с timeout 30s. Telegram отправляется параллельно с выполнением следующих фаз.
 
 ### Helper функция
 
