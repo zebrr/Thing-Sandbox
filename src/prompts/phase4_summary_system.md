@@ -40,5 +40,6 @@ Write from the character's first-person perspective — this is how THEY remembe
 - Write in first person
 - Do NOT add events that didn't happen
 - Do NOT reveal what the character doesn't know
-- Keep it compact: usually 1–2 short paragraphs (around 4–8 sentences in total). If the period is short or little happened, 3–5 sentences are enough
+- Keep it compact: usually 1–2 short paragraphs 4–6 sentences in total
+- If the period is short or little happened, 1–3 sentences are enough
 - Respond in the language of the simulation content (character descriptions, locations, memories)

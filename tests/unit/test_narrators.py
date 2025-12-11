@@ -298,7 +298,7 @@ class TestConsoleNarrator:
         assert "Bob enters the tavern." in output
 
     def test_console_narrator_show_narratives_false(self, capsys: pytest.CaptureFixture) -> None:
-        """ConsoleNarrator hides narratives when show_narratives=False."""
+        """ConsoleNarrator outputs nothing when show_narratives=False."""
         narrator = ConsoleNarrator(show_narratives=False)
         report = MockTickReport(
             sim_id="test-sim",
@@ -313,14 +313,8 @@ class TestConsoleNarrator:
         captured = capsys.readouterr()
         output = captured.out
 
-        # Should have header and footer
-        assert "test-sim - tick #42" in output
-        assert BOX_CHAR in output
-
-        # Should NOT include narrative content
-        assert "----- The Rusty Tankard (tavern) -----" not in output
-        assert "Bob enters the tavern." not in output
-        assert "[No narrative]" not in output
+        # Should output nothing at all
+        assert output == ""
 
     @pytest.mark.asyncio
     async def test_console_narrator_on_tick_start_noop(self) -> None:

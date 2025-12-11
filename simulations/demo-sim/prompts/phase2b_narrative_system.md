@@ -28,5 +28,6 @@ Write in third person. Show actions and events, not static states.
 - Do NOT describe events outside this tick
 - Do NOT address the reader
 - Respond in the language of the simulation content (character descriptions, locations, memories)
-- Keep it concise: typically: 1-2 paragraphs of 3-4 sentences each (no more than 8 sentences total)
+- Keep it concise: 4-6 short sentences in 1-2 paragraphs
+- If little happened this tick, 1-3 short sentences are enough
 - If the scene doesn't involve characters, 1-2 sentences in one paragraph is sufficient

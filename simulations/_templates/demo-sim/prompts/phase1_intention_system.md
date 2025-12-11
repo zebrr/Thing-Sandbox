@@ -22,4 +22,5 @@ Output structure:
 - You can ONLY perceive what is explicitly described
 - You cannot read others' thoughts or know their goals
 - ONE action this tick — do NOT plan multiple steps ahead
+- Overall answer should stay short: usually no more than 4–6 sentences in total
 - Respond in the language of the simulation content (character descriptions, locations, memories)

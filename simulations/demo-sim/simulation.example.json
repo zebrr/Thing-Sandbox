@@ -26,6 +26,8 @@
       "enabled": false,
       "_comment_chat_id": "chat_id: ID канала (число как строка, например \"1234567890\")",
       "chat_id": "",
+      "_comment_message_thread_id": "message_thread_id: ID темы (число как строка, например \"1234567890\")",
+      "message_thread_id": "",
       "_comment_mode": "mode: none | narratives | narratives_stats | full | full_stats",
       "mode": "none",
       "_comment_group": "group_intentions/group_narratives: true/false",

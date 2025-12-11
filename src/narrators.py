@@ -160,6 +160,10 @@ class ConsoleNarrator:
         Args:
             report: TickReport with narratives.
         """
+        # Skip all output if narratives are disabled
+        if not self._show_narratives:
+            return
+
         # Use UTF-8 encoding with error handling for Windows console
         try:
             # Try to reconfigure stdout for UTF-8 if possible
@@ -495,7 +499,7 @@ class TelegramNarrator:
             loc = self._simulation.locations.get(loc_id)
             loc_name = loc.identity.name if loc else loc_id
             narrative_text = escape_html(response.narrative)
-            lines.append(f"\n<b>{escape_html(loc_name)}</b>\n{narrative_text}")
+            lines.append(f"\n<b>{escape_html(loc_name)}</b>\n\n{narrative_text}")
 
         if stats_footer:
             lines.append(stats_footer)
@@ -577,7 +581,7 @@ class TelegramNarrator:
             Formatted stats footer string.
         """
         return (
-            f"\n\n───\n"
+            f"\n───\n"
             f"📊 <i>Phase {phase_num}: {total_tokens:,} tok · "
             f"{reasoning_tokens:,} reason · {duration:.1f}s</i>"
         )

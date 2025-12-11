@@ -26,6 +26,7 @@ Your task: resolve the scene — determine what happens based on character inten
 - Resolve each character's intention: success, partial success, or failure
 - Consider character triggers and personalities when resolving conflicts
 - Write memory_entry from each character's subjective first-person perspective
+- Keep memory_entry concise: 3-5 sentences capturing only the most significant moment or realization of this tick; details and routine can be forgotten
 - Update location moment to reflect the current state after the scene
 - If no characters are present — just update the moment (the world lives on)
 

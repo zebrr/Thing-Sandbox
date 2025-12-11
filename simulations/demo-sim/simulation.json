@@ -11,8 +11,9 @@
       "enabled": true
     },
     "telegram": {
-      "enabled": true,
+      "enabled": false,
       "chat_id": "",
+      "message_thread_id": "",
       "mode": "full_stats",
       "group_intentions": true,
       "group_narratives": true
