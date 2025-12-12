@@ -452,6 +452,10 @@ class Config:
         if not telegram_data.get("chat_id") and self.telegram_test_chat_id:
             telegram_data["chat_id"] = self.telegram_test_chat_id
 
+        # Normalize empty string to None for message_thread_id
+        if telegram_data.get("message_thread_id") == "":
+            telegram_data["message_thread_id"] = None
+
         # Fallback: if message_thread_id is None after merge, use TELEGRAM_TEST_THREAD_ID from .env
         if telegram_data.get("message_thread_id") is None and self.telegram_test_thread_id:
             telegram_data["message_thread_id"] = self.telegram_test_thread_id

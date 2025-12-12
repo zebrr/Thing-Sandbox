@@ -28,7 +28,7 @@ reasoning_effort = "medium"
 reasoning_summary = "auto"
 # verbosity = "medium" # не работает со Structured Outputs
 truncation = "auto"
-response_chain_depth = 1
+response_chain_depth = 2
 
 [phase2b]
 model = "gpt-5.2-2025-12-11"

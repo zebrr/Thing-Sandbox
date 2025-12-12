@@ -528,8 +528,7 @@ class TestTickLogger:
 
         assert "## Phase 3: State Application" in content
         assert "*(no LLM)*" in content
-        assert "### Characters" in content
-        assert "### Locations" in content
+        assert "Applied" in content
 
     def test_tick_logger_format_phase4(self, tmp_path: Path, mock_tick_report: TickReport) -> None:
         """TickLogger formats Phase 4 with memory and cells count."""

@@ -170,14 +170,14 @@ class TickLogger:
 
             intention_resp = intentions.get(char_id)
             if intention_resp:
-                lines.append(f"- **Intention:** {intention_resp.intention}")
+                lines.append(f"\n- **Intention:** {intention_resp.intention}")
             else:
-                lines.append("- **Intention:** *(none)*")
+                lines.append("\n- **Intention:** (none)")
 
             # Get reasoning from stats
             reasoning = self._get_reasoning_for_entity(stats, char_id, "intention")
             if reasoning:
-                lines.append(f"- **Reasoning:** {reasoning}")
+                lines.append(f"\n- **Reasoning:** {reasoning}")
 
             lines.append("")
 
@@ -194,7 +194,7 @@ class TickLogger:
         """
         phase_data = report.phases.get("phase2a")
         if not phase_data:
-            return "## Phase 2a: Arbitration\n\n*(no data)*\n"
+            return "## Phase 2a: Arbitration\n\n(no data)\n"
 
         stats = phase_data.stats
         tokens_str = self._format_tokens(stats)
@@ -227,25 +227,29 @@ class TickLogger:
                     intent = getattr(char_update, "external_intent", None) or ""
                     char_id = getattr(char_update, "character_id", "unknown")
                     char_loc = getattr(char_update, "location", "unknown")
-                    lines.append(
-                        f'- **{char_id}:** location={char_loc}, state="{state}", intent="{intent}"'
-                    )
+                    memory = getattr(char_update, "memory_entry", None) or ""
+                    lines.append(f"\n- **{char_id}:**")
+                    lines.append(f'\n  target location={char_loc}')
+                    lines.append(f'\n  updated state="{state}"')
+                    lines.append(f'\n  updated intent="{intent}"')
+                    lines.append(f'\n  new memory="{memory}"')
             else:
-                lines.append("*(none)*")
+                lines.append("(none)")
             lines.append("")
 
             # Location update section
+            lines.append("\n**Location:**")
             if master_output and master_output.location:
                 loc_update = master_output.location
                 moment = getattr(loc_update, "moment", None)
                 description = getattr(loc_update, "description", None)
-                moment_str = f'moment="{moment}"' if moment else "moment unchanged"
-                desc_str = "description unchanged"
-                if description:
-                    desc_str = f'description="{description}"'
-                lines.append(f"**Location:** {moment_str}, {desc_str}")
+                moment_str = f'"{moment}"' if moment else "unchanged"
+                desc_str = f'"{description}"' if description else "unchanged"
+                lines.append(f'\n  current moment={moment_str}')
+                lines.append(f'\n  description={desc_str}')
             else:
-                lines.append("**Location:** moment unchanged, description unchanged")
+                lines.append("\n  moment=unchanged")
+                lines.append("\n  description=unchanged")
             lines.append("")
 
             # Reasoning
@@ -288,11 +292,10 @@ class TickLogger:
             if narrative and narrative.strip():
                 # Format as blockquote, handling multiline
                 for para in narrative.split("\n\n"):
-                    lines.append(f"> {para.strip()}")
-                    lines.append(">")
+                    lines.append(f"{para.strip()}")
+                    lines.append("")
             else:
-                lines.append("*(no narrative)*")
-            lines.append("")
+                lines.append("(no narrative)")
 
         return "\n".join(lines)
 
@@ -307,32 +310,18 @@ class TickLogger:
         """
         phase_data = report.phases.get("phase3")
         if not phase_data:
-            return "## Phase 3: State Application\n\n*(no data)*\n"
+            return "## Phase 3: State Application\n\n(no data)\n"
+
+        char_count = len(report.simulation.characters)
+        loc_count = len(report.simulation.locations)
 
         lines = [
             "## Phase 3: State Application",
             "",
-            f"**Duration:** {phase_data.duration:.2f}s | *(no LLM)*",
+            f"**Duration:** {phase_data.duration:.2f}s | *(no LLM)* — "
+            f"Applied {char_count} character updates, {loc_count} location updates",
             "",
         ]
-
-        # Characters section
-        lines.append("### Characters")
-        for char_id, char in report.simulation.characters.items():
-            state = char.state.internal_state or "unchanged"
-            intent = char.state.external_intent or "unchanged"
-            lines.append(
-                f'- **{char_id}:** location={char.state.location}, state="{state}", '
-                f'intent="{intent}"'
-            )
-        lines.append("")
-
-        # Locations section
-        lines.append("### Locations")
-        for loc_id, location in report.simulation.locations.items():
-            moment = location.state.moment if location.state.moment else "unchanged"
-            lines.append(f"- **{loc_id}:** moment={moment}, description unchanged")
-        lines.append("")
 
         return "\n".join(lines)
 
@@ -369,9 +358,9 @@ class TickLogger:
             # New memory from pending_memories
             new_memory = report.pending_memories.get(char_id)
             if new_memory:
-                lines.append(f'- **New memory:** "{new_memory}"')
+                lines.append(f'\n- **New memory:** "{new_memory}"')
             else:
-                lines.append("- **New memory:** *(none)*")
+                lines.append("\n- **New memory:** (none)")
 
             # Cells count
             cells_count = len(char.memory.cells)
@@ -422,8 +411,8 @@ class TickLogger:
 
         for result in stats.results:
             if result.entity_key == expected_key and result.reasoning_summary:
-                # Join reasoning parts and format as italic quote
+                # Join reasoning parts
                 text = " ".join(result.reasoning_summary)
-                return f'_"{text}"_'
+                return f'{text}'
 
         return None
