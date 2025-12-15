@@ -365,11 +365,15 @@ class TickLogger:
             # Cells count
             cells_count = len(char.memory.cells)
 
-            # Check if summarization occurred (reasoning present means summarization)
-            reasoning = self._get_reasoning_for_entity(stats, char_id, "memory")
-            if reasoning:
+            # Check if summarization occurred based on reasoning_tokens > 0
+            # Note: reasoning_summary may be empty even when reasoning occurred
+            had_reasoning = self._had_reasoning_for_entity(stats, char_id, "memory")
+            reasoning_text = self._get_reasoning_for_entity(stats, char_id, "memory")
+
+            if had_reasoning:
                 lines.append(f"- **Cells:** {cells_count}/{max_cells} (summarized)")
-                lines.append(f"- **Reasoning:** {reasoning}")
+                if reasoning_text:
+                    lines.append(f"- **Reasoning:** {reasoning_text}")
             else:
                 lines.append(f"- **Cells:** {cells_count}/{max_cells} (no summarization)")
 
@@ -416,3 +420,32 @@ class TickLogger:
                 return f'{text}'
 
         return None
+
+    def _had_reasoning_for_entity(
+        self, stats: BatchStats | None, entity_id: str, chain_type: str
+    ) -> bool:
+        """Check if reasoning occurred for specific entity based on reasoning_tokens.
+
+        Note: reasoning_summary may be empty even when reasoning occurred.
+        The reliable indicator is reasoning_tokens > 0 in usage.
+
+        Args:
+            stats: BatchStats with results.
+            entity_id: Entity identifier (e.g., "bob", "tavern").
+            chain_type: Chain type (e.g., "intention", "resolution", "memory").
+
+        Returns:
+            True if reasoning_tokens > 0 for this entity, False otherwise.
+        """
+        if not stats or not stats.results:
+            return False
+
+        expected_key = f"{chain_type}:{entity_id}"
+
+        for result in stats.results:
+            if result.entity_key == expected_key:
+                if result.usage and result.usage.reasoning_tokens > 0:
+                    return True
+                return False
+
+        return False

@@ -205,7 +205,13 @@ Parse entity_key into (chain_type, entity_id).
 
 ### \_get_reasoning_for_entity(stats, entity_id, chain_type) -> str | None
 
-Extract reasoning summary for specific entity from BatchStats.results.
+Extract reasoning summary text for specific entity from BatchStats.results.
+Returns formatted italic quote or None if not found.
+
+### \_had_reasoning_for_entity(stats, entity_id, chain_type) -> bool
+
+Check if reasoning occurred for entity based on `usage.reasoning_tokens > 0`.
+This is the reliable indicator — `reasoning_summary` may be empty even when reasoning occurred.
 
 ---
 
@@ -303,7 +309,9 @@ class TickRunner:
 - test_tick_logger_format_phase4 — memory with cells count
 
 **Edge Cases:**
-- test_tick_logger_empty_reasoning — no reasoning line if None
+- test_tick_logger_empty_reasoning — no reasoning line if reasoning_summary is None
+- test_tick_logger_summarized_without_reasoning_summary — shows "(summarized)" when reasoning_tokens > 0 but reasoning_summary is None
+- test_tick_logger_no_summarization_when_no_reasoning_tokens — shows "(no summarization)" when reasoning_tokens = 0
 - test_tick_logger_non_ascii_content — handles Unicode correctly
 
 ### Integration Tests (test_skeleton.py)
@@ -337,13 +345,21 @@ def _parse_entity_key(entity_key: str) -> tuple[str, str]:
 
 ### Summarization Detection
 
-Phase 4 summarization occurred if reasoning_summary is present for that character:
+Phase 4 summarization detection uses `reasoning_tokens > 0` as the reliable indicator.
+
+**Important:** `reasoning_summary` may be empty (`None` or `[]`) even when reasoning
+actually occurred — this is documented OpenAI API behavior. The reliable indicator
+is `usage.reasoning_tokens > 0`.
 
 ```python
-reasoning = self._get_reasoning_for_entity(stats, char_id, "memory")
-if reasoning:
+# Check if reasoning occurred based on tokens, not summary text
+had_reasoning = self._had_reasoning_for_entity(stats, char_id, "memory")
+reasoning_text = self._get_reasoning_for_entity(stats, char_id, "memory")
+
+if had_reasoning:
     lines.append(f"- **Cells:** {cells}/{max_cells} (summarized)")
-    lines.append(f"- **Reasoning:** {reasoning}")
+    if reasoning_text:
+        lines.append(f"- **Reasoning:** {reasoning_text}")
 else:
     lines.append(f"- **Cells:** {cells}/{max_cells} (no summarization)")
 ```

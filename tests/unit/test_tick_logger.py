@@ -15,12 +15,23 @@ from src.tick_logger import TickLogger
 
 
 @dataclass
+class MockUsage:
+    """Mock ResponseUsage for testing."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    reasoning_tokens: int = 0
+    cached_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass
 class MockRequestResult:
     """Mock RequestResult for testing."""
 
     entity_key: str | None
     success: bool
-    usage: object | None = None
+    usage: MockUsage | None = None
     reasoning_summary: list[str] | None = None
     error: str | None = None
 
@@ -219,11 +230,13 @@ def mock_batch_stats() -> MockBatchStats:
             MockRequestResult(
                 entity_key="intention:bob",
                 success=True,
+                usage=MockUsage(reasoning_tokens=250),
                 reasoning_summary=["Bob thinks carefully about his next move"],
             ),
             MockRequestResult(
                 entity_key="intention:alice",
                 success=True,
+                usage=MockUsage(reasoning_tokens=250),
                 reasoning_summary=["Alice is focused on her patrol"],
             ),
         ],
@@ -252,11 +265,13 @@ def mock_phase_data(mock_batch_stats: MockBatchStats) -> dict[str, PhaseData]:
                     MockRequestResult(
                         entity_key="resolution:tavern",
                         success=True,
+                        usage=MockUsage(reasoning_tokens=350),
                         reasoning_summary=["The tavern scene unfolds peacefully"],
                     ),
                     MockRequestResult(
                         entity_key="resolution:forest",
                         success=True,
+                        usage=MockUsage(reasoning_tokens=350),
                         reasoning_summary=["The forest remains quiet"],
                     ),
                 ],
@@ -317,6 +332,7 @@ def mock_phase_data(mock_batch_stats: MockBatchStats) -> dict[str, PhaseData]:
                     MockRequestResult(
                         entity_key="memory:alice",
                         success=True,
+                        usage=MockUsage(reasoning_tokens=366),
                         reasoning_summary=["Merging older observations"],
                     ),
                 ],
@@ -548,11 +564,11 @@ class TestTickLogger:
         assert "summarized" in content or "no summarization" in content
 
     def test_tick_logger_empty_reasoning(self, tmp_path: Path) -> None:
-        """TickLogger doesn't show reasoning line if None."""
+        """TickLogger doesn't show reasoning line if reasoning_summary is None."""
         sim_path = tmp_path / "simulations" / "test-sim"
         sim_path.mkdir(parents=True)
 
-        # Create report with no reasoning
+        # Create report with no reasoning (reasoning_tokens=0)
         simulation = MockSimulation(
             id="test-sim",
             current_tick=1,
@@ -580,7 +596,8 @@ class TestTickLogger:
                         MockRequestResult(
                             entity_key="intention:bob",
                             success=True,
-                            reasoning_summary=None,  # No reasoning
+                            usage=MockUsage(reasoning_tokens=0),  # No reasoning tokens
+                            reasoning_summary=None,  # No reasoning summary
                         )
                     ],
                 ),
@@ -627,6 +644,154 @@ class TestTickLogger:
             next_content_idx += 1
         if next_content_idx < len(lines):
             assert "**Reasoning:**" not in lines[next_content_idx]
+
+    def test_tick_logger_summarized_without_reasoning_summary(self, tmp_path: Path) -> None:
+        """TickLogger shows 'summarized' when reasoning_tokens > 0 but reasoning_summary is None.
+
+        This tests the key fix: reasoning_summary can be empty even when reasoning
+        actually occurred. The reliable indicator is reasoning_tokens > 0.
+        """
+        sim_path = tmp_path / "simulations" / "test-sim"
+        sim_path.mkdir(parents=True)
+
+        simulation = MockSimulation(
+            id="test-sim",
+            current_tick=1,
+            status="paused",
+            characters={
+                "bob": MockCharacter(
+                    identity=MockIdentity(id="bob", name="Bob"),
+                    state=MockState(location="tavern"),
+                    memory=MockMemory(
+                        cells=[MockMemoryCell(tick=1, text="Something happened")],
+                    ),
+                ),
+            },
+            locations={
+                "tavern": MockLocation(
+                    identity=MockIdentity(id="tavern", name="Tavern"),
+                ),
+            },
+        )
+
+        phase_data = {
+            "phase1": PhaseData(duration=1.0, stats=None, data={}),
+            "phase2a": PhaseData(duration=1.0, stats=None, data={}),
+            "phase2b": PhaseData(duration=1.0, stats=None, data={}),
+            "phase3": PhaseData(duration=0.01, stats=None, data={"pending_memories": {}}),
+            "phase4": PhaseData(
+                duration=1.0,
+                stats=MockBatchStats(
+                    total_tokens=500,
+                    reasoning_tokens=200,
+                    request_count=1,
+                    results=[
+                        MockRequestResult(
+                            entity_key="memory:bob",
+                            success=True,
+                            usage=MockUsage(reasoning_tokens=200),  # Reasoning occurred!
+                            reasoning_summary=None,  # But summary is empty (API behavior)
+                        )
+                    ],
+                ),
+                data=None,
+            ),
+        }
+
+        report = TickReport(
+            sim_id="test-sim",
+            tick_number=1,
+            narratives={},
+            location_names={"tavern": "Tavern"},
+            success=True,
+            timestamp=datetime.now(),
+            duration=3.0,
+            phases=phase_data,
+            simulation=simulation,  # type: ignore[arg-type]
+            pending_memories={"bob": "New memory entry"},
+        )
+
+        logger = TickLogger(sim_path)
+        logger.write(report)
+
+        log_file = sim_path / "logs" / "tick_000001.md"
+        content = log_file.read_text(encoding="utf-8")
+
+        # Should say "summarized" because reasoning_tokens > 0
+        assert "(summarized)" in content
+        # Should NOT have reasoning text since reasoning_summary is None
+        assert "**Reasoning:**" not in content.split("## Phase 4")[1]
+
+    def test_tick_logger_no_summarization_when_no_reasoning_tokens(self, tmp_path: Path) -> None:
+        """TickLogger shows 'no summarization' when reasoning_tokens = 0."""
+        sim_path = tmp_path / "simulations" / "test-sim"
+        sim_path.mkdir(parents=True)
+
+        simulation = MockSimulation(
+            id="test-sim",
+            current_tick=1,
+            status="paused",
+            characters={
+                "bob": MockCharacter(
+                    identity=MockIdentity(id="bob", name="Bob"),
+                    state=MockState(location="tavern"),
+                    memory=MockMemory(
+                        cells=[MockMemoryCell(tick=1, text="Something happened")],
+                    ),
+                ),
+            },
+            locations={
+                "tavern": MockLocation(
+                    identity=MockIdentity(id="tavern", name="Tavern"),
+                ),
+            },
+        )
+
+        phase_data = {
+            "phase1": PhaseData(duration=1.0, stats=None, data={}),
+            "phase2a": PhaseData(duration=1.0, stats=None, data={}),
+            "phase2b": PhaseData(duration=1.0, stats=None, data={}),
+            "phase3": PhaseData(duration=0.01, stats=None, data={"pending_memories": {}}),
+            "phase4": PhaseData(
+                duration=1.0,
+                stats=MockBatchStats(
+                    total_tokens=300,
+                    reasoning_tokens=0,  # No reasoning at batch level
+                    request_count=1,
+                    results=[
+                        MockRequestResult(
+                            entity_key="memory:bob",
+                            success=True,
+                            usage=MockUsage(reasoning_tokens=0),  # No reasoning tokens
+                            reasoning_summary=None,
+                        )
+                    ],
+                ),
+                data=None,
+            ),
+        }
+
+        report = TickReport(
+            sim_id="test-sim",
+            tick_number=1,
+            narratives={},
+            location_names={"tavern": "Tavern"},
+            success=True,
+            timestamp=datetime.now(),
+            duration=3.0,
+            phases=phase_data,
+            simulation=simulation,  # type: ignore[arg-type]
+            pending_memories={"bob": "New memory entry"},
+        )
+
+        logger = TickLogger(sim_path)
+        logger.write(report)
+
+        log_file = sim_path / "logs" / "tick_000001.md"
+        content = log_file.read_text(encoding="utf-8")
+
+        # Should say "no summarization" because reasoning_tokens = 0
+        assert "(no summarization)" in content
 
     def test_tick_logger_non_ascii_content(self, tmp_path: Path) -> None:
         """TickLogger handles non-ASCII characters correctly."""
