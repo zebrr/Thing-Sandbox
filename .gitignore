@@ -24,13 +24,6 @@ venv/
 .env.local
 .env.*.local
 
-# Project specific
-simulations/*
-!simulations/demo-sim/
-!simulations/_templates/
-simulations/_templates/*
-!simulations/_templates/demo-sim/
-
 # Testing
 .coverage
 htmlcov/
