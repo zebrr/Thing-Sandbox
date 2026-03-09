@@ -16,8 +16,13 @@ venv/
 # IDE
 .idea/
 .vscode/
+.qwen/
 *.swp
 *.swo
+
+# Node.js
+node_modules/
+package-lock.json
 
 # Environment
 .env
@@ -34,6 +39,14 @@ htmlcov/
 
 # ruff
 .ruff_cache/
+
+# Logs
+*.log
+
+# Temporary/working files
+tmp/
+temp/
+*.tmp
 
 # Claude Code
 .claude/
